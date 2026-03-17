@@ -1,3 +1,5 @@
+import React from 'react';
+
 export interface Metric {
   id: string;
   domain: 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting';
@@ -20,6 +22,20 @@ export interface GapAlert {
   title: string;
   description: string;
   severity: 'critical' | 'warning' | 'info';
+}
+
+export interface DetailedIndicator {
+  id: string;
+  title: string;
+  domain: 'economic' | 'health' | 'education' | 'leadership';
+  source: string;
+  lastUpdated: string;
+  trendData: { year: string; national: number; target: number }[];
+  disaggregation: {
+    location: { name: string; value: number }[];
+    age: { group: string; value: number }[];
+  };
+  regionalData: { district: string; value: number }[];
 }
 
 // Simulating the backend data based on the design system documentation
@@ -127,4 +143,45 @@ export const fetchGapAlerts = async (): Promise<GapAlert[]> => {
       severity: 'warning'
     }
   ];
+};
+
+export const fetchDetailedIndicator = async (id: string): Promise<DetailedIndicator> => {
+  // Returning World Bank style deep-dive data for the Data Explorer
+  return {
+    id: 'm1',
+    title: 'Female Labor Force Participation Rate',
+    domain: 'economic',
+    source: 'National Institute of Statistics of Rwanda (NISR) - LFS 2024',
+    lastUpdated: '2024-11-15',
+    trendData: [
+      { year: '2019', national: 42.1, target: 45.0 },
+      { year: '2020', national: 43.5, target: 46.0 },
+      { year: '2021', national: 44.1, target: 47.0 },
+      { year: '2022', national: 45.1, target: 48.0 },
+      { year: '2023', national: 46.5, target: 49.0 },
+      { year: '2024', national: 47.2, target: 50.0 },
+    ],
+    disaggregation: {
+      location: [
+        { name: 'Urban', value: 52.4 },
+        { name: 'Rural', value: 45.1 },
+      ],
+      age: [
+        { group: '16-24', value: 38.2 },
+        { group: '25-34', value: 54.1 },
+        { group: '35-54', value: 58.7 },
+        { group: '55+', value: 41.3 },
+      ]
+    },
+    regionalData: [
+      { district: 'Gasabo', value: 55.2 },
+      { district: 'Nyarugenge', value: 53.8 },
+      { district: 'Kicukiro', value: 54.5 },
+      { district: 'Rubavu', value: 48.1 },
+      { district: 'Musanze', value: 46.7 },
+      { district: 'Huye', value: 45.9 },
+      { district: 'Rusizi', value: 44.2 },
+      { district: 'Nyagatare', value: 43.8 },
+    ]
+  };
 };

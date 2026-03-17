@@ -68,12 +68,12 @@ export default function DataExplorer() {
     setIsGeneratingInsight(true);
     setActiveTab('insights');
     try {
-      // @ts-ignore
-      const apiKey = typeof process !== 'undefined' && process.env ? process.env.GEMINI_API_KEY : import.meta.env.VITE_GEMINI_API_KEY;
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
       const ai = new GoogleGenAI({ apiKey });
-      
+
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.0-flash",
         contents: `Based on this specific metric for Rwanda: "${detailedData.title}" (Domain: ${detailedData.domain}). What are the latest real-world developments, news, or initiatives in Rwanda regarding this specific area? Provide exactly 3 short, distinct insights. Return a JSON array of objects, where each object has a 'type' (e.g., 'NEWS', 'POLICY', 'INITIATIVE') and a 'headline' (the insight text).`,
         config: {
           tools: [{ googleSearch: {} }],
@@ -409,7 +409,7 @@ export default function DataExplorer() {
             <AlertCircle className="w-10 h-10 text-rwanda-yellow mx-auto mb-4" />
             <h4 className="text-lg font-semibold text-rich-black">Unable to load indicators</h4>
             <p className="text-dark-gray mt-2 max-w-md mx-auto">
-              Could not connect to the backend API. Please ensure the Django server is running at {import.meta.env.VITE_API_URL || 'https://api.umutima.rw/api/v1'}.
+              Could not connect to the backend API. Please ensure the Django server is running at {import.meta.env.VITE_API_URL || 'https://api.gdoportal.rw/api/v1'}.
             </p>
           </div>
         ) : indicators?.length === 0 ? (

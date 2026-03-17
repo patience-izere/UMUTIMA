@@ -27,6 +27,7 @@ export interface GapAlert {
 export interface IndicatorSummary {
   id: string;
   title: string;
+  description?: string;
   domain: 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting';
   source: string;
   updateFrequency: string;

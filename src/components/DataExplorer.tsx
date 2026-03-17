@@ -12,10 +12,20 @@ import { generatePDF } from '../lib/pdfExport';
 import PdfExportModal from './PdfExportModal';
 import { GoogleGenAI } from '@google/genai';
 
+const getFallbackDescription = (domain: string) => {
+  switch (domain) {
+    case 'economic': return 'Measures economic participation, financial inclusion, and employment metrics.';
+    case 'health': return 'Tracks health outcomes, access to healthcare, and maternal well-being.';
+    case 'education': return 'Monitors educational attainment, enrollment rates, and literacy.';
+    case 'leadership': return 'Evaluates representation in decision-making and leadership roles.';
+    default: return 'Monitors key metrics and progress for this indicator across Rwanda.';
+  }
+};
+
 export default function DataExplorer() {
   const [filters, setFilters] = useState({ domain: '', source: '', frequency: '' });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'trend' | 'demographics' | 'geography' | 'insights'>('trend');
+  const [activeTab, setActiveTab] = useState<'trend' | 'disaggregation' | 'geography' | 'insights'>('trend');
   const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   
@@ -36,12 +46,12 @@ export default function DataExplorer() {
   const handleExport = () => {
     if (!detailedData) return;
     if (activeTab === 'trend') exportToCSV(detailedData.trendData, `${detailedData.title}_Trend`);
-    if (activeTab === 'demographics') exportToCSV([...detailedData.disaggregation.location, ...detailedData.disaggregation.age], `${detailedData.title}_Demographics`);
+    if (activeTab === 'disaggregation') exportToCSV([...detailedData.disaggregation.location, ...detailedData.disaggregation.age], `${detailedData.title}_Disaggregation`);
     if (activeTab === 'geography') exportToCSV(detailedData.regionalData, `${detailedData.title}_Geography`);
   };
 
   const handleExportPDF = async (title: string, date: string, selectedSections: string[]) => {
-    const allSections = ['explorer-trend', 'explorer-demographics', 'explorer-geography', 'explorer-insights'];
+    const allSections = ['explorer-trend', 'explorer-disaggregation', 'explorer-geography', 'explorer-insights'];
     const hiddenSections = allSections.filter(id => !selectedSections.includes(id));
     
     setIsExportingPdf(true);
@@ -150,16 +160,16 @@ export default function DataExplorer() {
           </div>
 
           {/* Tabs */}
-          <div className="flex gap-6 border-b border-light-gray">
-            {(['trend', 'demographics', 'geography', 'insights'] as const).map((tab) => (
+          <div className="flex gap-6 border-b border-light-gray overflow-x-auto">
+            {(['trend', 'disaggregation', 'geography', 'insights'] as const).map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`pb-3 text-sm font-semibold capitalize transition-colors relative ${
+                className={`pb-3 text-sm font-semibold capitalize transition-colors relative whitespace-nowrap ${
                   activeTab === tab ? 'text-rich-black' : 'text-medium-gray hover:text-dark-gray'
                 }`}
               >
-                {tab}
+                {tab === 'disaggregation' ? 'Data Disaggregation' : tab}
                 {activeTab === tab && (
                   <div className="absolute bottom-0 left-0 w-full h-0.5" style={{ backgroundColor: primaryColor }} />
                 )}
@@ -196,9 +206,9 @@ export default function DataExplorer() {
             </div>
           )}
 
-          {(activeTab === 'demographics' || isExportingPdf) && (
-            <div id="explorer-demographics" className={isExportingPdf ? "mb-12 h-[400px]" : "h-full"}>
-              {isExportingPdf && <h3 className="text-lg font-bold mb-4">Demographics</h3>}
+          {(activeTab === 'disaggregation' || isExportingPdf) && (
+            <div id="explorer-disaggregation" className={isExportingPdf ? "mb-12 h-[400px]" : "h-full"}>
+              {isExportingPdf && <h3 className="text-lg font-bold mb-4">Data Disaggregation</h3>}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-full">
               <div className="h-full flex flex-col">
                 <h4 className="text-sm font-semibold text-dark-gray mb-4 text-center">By Location</h4>
@@ -302,7 +312,7 @@ export default function DataExplorer() {
           defaultTitle={`${detailedData.title} - Detailed Report`}
           sections={[
             { id: 'explorer-trend', label: 'Trend Analysis' },
-            { id: 'explorer-demographics', label: 'Demographics' },
+            { id: 'explorer-disaggregation', label: 'Data Disaggregation' },
             { id: 'explorer-geography', label: 'Geography' },
             { id: 'explorer-insights', label: 'AI Insights' }
           ]}
@@ -430,6 +440,9 @@ export default function DataExplorer() {
                     {indicator.domain}
                   </span>
                 </div>
+                <p className="text-sm text-dark-gray mb-4 line-clamp-2">
+                  {indicator.description || getFallbackDescription(indicator.domain)}
+                </p>
                 <div className="flex items-center gap-4 text-xs text-dark-gray">
                   <span className="flex items-center gap-1">
                     <span className="font-medium text-soft-black">Source:</span> {indicator.source}

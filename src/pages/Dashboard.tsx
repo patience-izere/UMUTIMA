@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchMetrics, fetchInsights, fetchGapAlerts } from '../lib/api';
+import { fetchMetrics, fetchInsights, fetchGapAlerts, Insight } from '../lib/api';
 import { exportToCSV } from '../lib/export';
+import { generatePDF } from '../lib/pdfExport';
 import MetricCard from '../components/MetricCard';
 import GapAlert from '../components/GapAlert';
 import RwandaMap from '../components/RwandaMap';
 import DataExplorer from '../components/DataExplorer';
-import { Sparkles, Download, LayoutGrid, BarChart2 } from 'lucide-react';
+import PdfExportModal from '../components/PdfExportModal';
+import { Sparkles, Download, LayoutGrid, BarChart2, FileText, Loader2, Globe } from 'lucide-react';
+import { GoogleGenAI } from '@google/genai';
 
 export default function Dashboard() {
   const [viewMode, setViewMode] = useState<'overview' | 'explorer'>('overview');
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState(false);
+  const [isGeneratingInsight, setIsGeneratingInsight] = useState(false);
+  const [generatedInsights, setGeneratedInsights] = useState<Insight[]>([]);
 
   const { data: metrics, isLoading: metricsLoading } = useQuery({
     queryKey: ['metrics'],
@@ -26,6 +32,44 @@ export default function Dashboard() {
     queryFn: fetchGapAlerts
   });
 
+  const handleGenerateInsight = async () => {
+    setIsGeneratingInsight(true);
+    try {
+      // @ts-ignore - process.env is injected by the platform
+      const apiKey = typeof process !== 'undefined' && process.env ? process.env.GEMINI_API_KEY : import.meta.env.VITE_GEMINI_API_KEY;
+      const ai = new GoogleGenAI({ apiKey });
+      
+      const metricsContext = metrics ? metrics.map(m => `${m.title}: ${m.value} (${m.trendDirection})`).join(', ') : '';
+      
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Based on these current metrics for Rwanda: ${metricsContext}. What are the latest real-world developments, news, or initiatives in Rwanda regarding gender equality, women's empowerment, or these specific metric areas? Provide exactly 3 short, distinct insights. Return a JSON array of objects, where each object has a 'type' (e.g., 'NEWS', 'POLICY', 'INITIATIVE') and a 'headline' (the insight text).`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+        },
+      });
+
+      const text = response.text || '';
+      try {
+        const parsed = JSON.parse(text);
+        const newInsights = parsed.map((item: any, index: number) => ({
+          id: `gen-${Date.now()}-${index}`,
+          type: item.type || 'SEARCH',
+          headline: item.headline || item,
+          isGenerated: true
+        }));
+        setGeneratedInsights(newInsights);
+      } catch (e) {
+        console.error("Failed to parse JSON response:", e, text);
+      }
+    } catch (error) {
+      console.error("Failed to generate insights:", error);
+    } finally {
+      setIsGeneratingInsight(false);
+    }
+  };
+
   const handleExportDashboard = () => {
     if (metrics) {
       exportToCSV(metrics.map(m => ({
@@ -36,6 +80,13 @@ export default function Dashboard() {
         'Time Range': m.timeRange
       })), 'UMUTIMA_Dashboard_Metrics');
     }
+  };
+
+  const handleExportPDF = async (title: string, date: string, selectedSections: string[]) => {
+    const allSections = ['dashboard-metrics', 'dashboard-map', 'dashboard-gaps', 'dashboard-insights'];
+    const hiddenSections = allSections.filter(id => !selectedSections.includes(id));
+    
+    await generatePDF('dashboard-content', 'UMUTIMA_Dashboard_Report', title, date, hiddenSections);
   };
 
   return (
@@ -63,13 +114,23 @@ export default function Dashboard() {
               <BarChart2 className="w-4 h-4" />
             </button>
           </div>
+          {viewMode === 'overview' && (
+            <button onClick={() => setIsPdfModalOpen(true)} className="btn-ghost flex items-center gap-2">
+              <FileText className="w-4 h-4" />
+              Export PDF
+            </button>
+          )}
           <button onClick={handleExportDashboard} className="btn-ghost flex items-center gap-2">
             <Download className="w-4 h-4" />
-            Export Data
+            Export CSV
           </button>
-          <button className="btn-primary flex items-center gap-2">
-            <Sparkles className="w-4 h-4" />
-            Generate Insight
+          <button 
+            onClick={handleGenerateInsight} 
+            disabled={isGeneratingInsight}
+            className="btn-primary flex items-center gap-2 disabled:opacity-70"
+          >
+            {isGeneratingInsight ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {isGeneratingInsight ? 'Generating...' : 'Generate Insight'}
           </button>
         </div>
       </div>
@@ -79,9 +140,9 @@ export default function Dashboard() {
           <DataExplorer />
         </section>
       ) : (
-        <>
+        <div id="dashboard-content" className="space-y-8 bg-off-white p-2 rounded-xl">
           {/* Metrics Grid */}
-          <section>
+          <section id="dashboard-metrics">
             <h2 className="text-xl font-display font-semibold text-rich-black mb-4">Key Indicators</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               {metricsLoading ? (
@@ -106,13 +167,13 @@ export default function Dashboard() {
 
           {/* Map and Gaps */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            <section className="lg:col-span-2">
+            <section id="dashboard-map" className="lg:col-span-2">
               <h2 className="text-xl font-display font-semibold text-rich-black mb-4">Coverage Map</h2>
               <RwandaMap />
             </section>
 
             {/* Data Gaps */}
-            <section className="space-y-4">
+            <section id="dashboard-gaps" className="space-y-4">
               <h2 className="text-xl font-display font-semibold text-rich-black mb-4">Data Gaps & Alerts</h2>
               <div className="space-y-4">
                 {gapAlertsLoading ? (
@@ -134,19 +195,24 @@ export default function Dashboard() {
           </div>
 
           {/* AI Insights Panel */}
-          <section className="space-y-4">
+          <section id="dashboard-insights" className="space-y-4">
             <div className="flex items-center gap-2 mb-2">
               <Sparkles className="w-5 h-5 text-rwanda-blue" />
               <h2 className="text-xl font-display font-semibold text-rich-black">AI-Generated Insights</h2>
+              {generatedInsights.length > 0 && (
+                <span className="ml-2 px-2 py-0.5 bg-rwanda-blue/10 text-rwanda-blue text-xs font-medium rounded-full flex items-center gap-1">
+                  <Globe className="w-3 h-3" /> Live Search Data
+                </span>
+              )}
             </div>
             
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {insightsLoading ? (
+              {insightsLoading || isGeneratingInsight ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <div key={i} className="h-32 rounded-xl skeleton" />
                 ))
               ) : (
-                insights?.map(insight => (
+                (generatedInsights.length > 0 ? generatedInsights : insights)?.map(insight => (
                   <div key={insight.id} className="bg-white p-5 rounded-xl border border-light-gray shadow-sm hover:border-rwanda-blue transition-colors">
                     <span className="inline-block px-2 py-1 bg-off-white text-xs font-bold text-dark-gray rounded mb-3 uppercase tracking-wider">
                       {insight.type}
@@ -159,8 +225,21 @@ export default function Dashboard() {
               )}
             </div>
           </section>
-        </>
+        </div>
       )}
+
+      <PdfExportModal
+        isOpen={isPdfModalOpen}
+        onClose={() => setIsPdfModalOpen(false)}
+        onExport={handleExportPDF}
+        defaultTitle="UMUTIMA Gender Data Observatory - National Overview"
+        sections={[
+          { id: 'dashboard-metrics', label: 'Key Indicators' },
+          { id: 'dashboard-map', label: 'Coverage Map' },
+          { id: 'dashboard-gaps', label: 'Data Gaps & Alerts' },
+          { id: 'dashboard-insights', label: 'AI-Generated Insights' }
+        ]}
+      />
     </div>
   );
 }

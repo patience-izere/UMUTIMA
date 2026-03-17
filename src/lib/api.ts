@@ -24,6 +24,14 @@ export interface GapAlert {
   severity: 'critical' | 'warning' | 'info';
 }
 
+export interface IndicatorSummary {
+  id: string;
+  title: string;
+  domain: 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting';
+  source: string;
+  updateFrequency: string;
+}
+
 export interface DetailedIndicator {
   id: string;
   title: string;
@@ -40,6 +48,19 @@ export interface DetailedIndicator {
 
 // Base API URL from environment variables, defaulting to the architecture spec
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://api.umutima.rw/api/v1';
+
+export const fetchIndicators = async (filters?: { domain?: string; source?: string; frequency?: string }): Promise<IndicatorSummary[]> => {
+  const params = new URLSearchParams();
+  if (filters?.domain) params.append('domain', filters.domain);
+  if (filters?.source) params.append('source', filters.source);
+  if (filters?.frequency) params.append('frequency', filters.frequency);
+  
+  const response = await fetch(`${API_BASE_URL}/indicators/?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error('Failed to fetch indicators from backend');
+  }
+  return response.json();
+};
 
 export const fetchMetrics = async (): Promise<Metric[]> => {
   const response = await fetch(`${API_BASE_URL}/indicators/metrics/`);

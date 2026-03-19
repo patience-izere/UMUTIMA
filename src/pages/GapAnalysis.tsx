@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { fetchGapAlerts } from '../lib/api';
+import { fetchGapAlerts, fetchCatalogStats, type GapAlert as ApiGapAlert, type CatalogStats } from '../lib/api';
 import { domainColors } from '../lib/designTokens';
+import GapCtaModal, { type CtaActionType } from '../components/GapCtaModal';
+import { useDistricts } from '../context/DistrictContext';
+import { doesGapAffectSelectedDistricts, PROVINCE_DISTRICTS, ALL_DISTRICT_IDS } from '../lib/districtFiltering';
 import { AlertTriangle, Info, CheckCircle2, Filter, Sparkles, Loader2, TrendingDown, BarChart3, Globe, ChevronDown, ChevronUp, X } from 'lucide-react';
 import { RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell } from 'recharts';
 import { GoogleGenAI } from '@google/genai';
 
 type Severity = 'critical' | 'warning' | 'info';
-type Domain = 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting' | 'all';
+type Domain = 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting' | 'finance' | 'all';
 
 interface GapItem {
   id: string;
@@ -16,79 +19,122 @@ interface GapItem {
   severity: Severity;
   domain: Exclude<Domain, 'all'>;
   affectedDistricts: number;
-  dataCompleteness: number; // 0-100
+  districtIds: string[];
+  dataCompleteness: number;
   lastReported: string;
   recommendation: string;
 }
 
-const STATIC_GAPS: GapItem[] = [
+// ── Normalize API GapAlert → GapItem ─────────────────────────────────────────
+function normalizeApiGap(a: ApiGapAlert, idx: number): GapItem {
+  const domainGuess = (() => {
+    const t = (a.title + ' ' + a.description).toLowerCase();
+    if (t.includes('health') || t.includes('maternal') || t.includes('gbv') || t.includes('contracepti')) return 'health';
+    if (t.includes('education') || t.includes('school') || t.includes('tvet') || t.includes('girls')) return 'education';
+    if (t.includes('leadership') || t.includes('government') || t.includes('parliament')) return 'leadership';
+    if (t.includes('finance') || t.includes('budget') || t.includes('minecofin')) return 'finance';
+    if (t.includes('gbv') || t.includes('violence') || t.includes('cross')) return 'crossCutting';
+    return 'economic';
+  })() as Exclude<Domain, 'all'>;
+
+  return {
+    id: a.id,
+    title: a.title,
+    description: a.description,
+    severity: a.severity,
+    domain: domainGuess,
+    affectedDistricts: 0,
+    districtIds: ALL_DISTRICT_IDS,
+    dataCompleteness: a.severity === 'critical' ? 20 : a.severity === 'warning' ? 45 : 65,
+    lastReported: 'N/A',
+    recommendation: '',
+  };
+}
+
+// ── Static fallback (used only when API returns nothing) ──────────────────────
+const FALLBACK_GAPS: GapItem[] = [
   {
-    id: '1', severity: 'critical', domain: 'leadership',
+    id: 'f1', severity: 'critical', domain: 'leadership',
     title: 'Women in Local Government Leadership Underreported',
     description: 'Data on women holding executive positions in 14 of 30 districts is missing or over 18 months old, preventing accurate tracking of NST1 targets.',
-    affectedDistricts: 14, dataCompleteness: 32, lastReported: '2023-Q2',
-    recommendation: 'Prioritize quarterly data collection from district offices and integrate with MINALOC reporting systems.'
+    affectedDistricts: 14,
+    districtIds: ['nyagatare', 'gatsibo', 'kayonza', 'rwamagana', 'ngoma', 'bugesera', 'burera', 'musanze', 'rubavu', 'nyabihu', 'kamonyi', 'muhanga', 'gasabo', 'nyarugenge'],
+    dataCompleteness: 32, lastReported: '2023-Q2',
+    recommendation: 'Prioritize quarterly data collection from district offices and integrate with MINALOC reporting systems.',
   },
   {
-    id: '2', severity: 'critical', domain: 'economic',
+    id: 'f2', severity: 'critical', domain: 'economic',
     title: 'Gender-Disaggregated Financial Inclusion Data Gap',
     description: 'BNR and MINECOFIN lack sex-disaggregated data on mobile money ownership and formal savings accounts for rural women in Eastern and Northern provinces.',
-    affectedDistricts: 11, dataCompleteness: 28, lastReported: '2023-Q3',
-    recommendation: 'Mandate sex-disaggregated reporting in all financial institution licensing agreements.'
+    affectedDistricts: 11,
+    districtIds: [...PROVINCE_DISTRICTS.Eastern, ...PROVINCE_DISTRICTS.Northern].slice(0, 11),
+    dataCompleteness: 28, lastReported: '2023-Q3',
+    recommendation: 'Mandate sex-disaggregated reporting in all financial institution licensing agreements.',
   },
   {
-    id: '3', severity: 'warning', domain: 'health',
+    id: 'f3', severity: 'warning', domain: 'health',
     title: 'Maternal Mental Health Indicators Absent',
-    description: 'No standardized national indicators exist for postpartum depression or maternal mental health outcomes, creating a blind spot in women\'s health monitoring.',
-    affectedDistricts: 30, dataCompleteness: 5, lastReported: 'N/A',
-    recommendation: 'Develop and pilot maternal mental health screening tools in collaboration with RBC and WHO Rwanda.'
+    description: 'No standardized national indicators exist for postpartum depression or maternal mental health outcomes.',
+    affectedDistricts: 30,
+    districtIds: ALL_DISTRICT_IDS,
+    dataCompleteness: 5, lastReported: 'N/A',
+    recommendation: 'Develop and pilot maternal mental health screening tools in collaboration with RBC and WHO Rwanda.',
   },
   {
-    id: '4', severity: 'warning', domain: 'education',
+    id: 'f4', severity: 'warning', domain: 'education',
     title: 'TVET Gender Enrollment Disaggregation Incomplete',
-    description: 'Technical and vocational training enrollment data is not consistently disaggregated by sex across 8 TVET institutions, masking gender gaps in skills training.',
-    affectedDistricts: 8, dataCompleteness: 51, lastReported: '2024-Q1',
-    recommendation: 'Standardize TVET enrollment forms to capture sex, age, and disability status.'
+    description: 'Technical and vocational training enrollment data is not consistently disaggregated by sex across 8 TVET institutions.',
+    affectedDistricts: 8,
+    districtIds: ['gasabo', 'kicukiro', 'huye', 'musanze', 'rubavu', 'nyagatare', 'muhanga', 'rwamagana'],
+    dataCompleteness: 51, lastReported: '2024-Q1',
+    recommendation: 'Standardize TVET enrollment forms to capture sex, age, and disability status.',
   },
   {
-    id: '5', severity: 'warning', domain: 'economic',
+    id: 'f5', severity: 'warning', domain: 'economic',
     title: 'Informal Sector Women Employment Undercounted',
     description: 'NISR labor force surveys undercount women in informal agricultural and domestic work due to survey methodology limitations.',
-    affectedDistricts: 18, dataCompleteness: 44, lastReported: '2023-Q4',
-    recommendation: 'Revise EICV survey instruments to better capture informal and unpaid care work.'
+    affectedDistricts: 18,
+    districtIds: [...PROVINCE_DISTRICTS.Eastern, ...PROVINCE_DISTRICTS.Southern, 'musanze', 'gakenke', 'rulindo'],
+    dataCompleteness: 44, lastReported: '2023-Q4',
+    recommendation: 'Revise EICV survey instruments to better capture informal and unpaid care work.',
   },
   {
-    id: '6', severity: 'info', domain: 'education',
-    title: 'Girls\' Secondary Completion Rate by Disability Status',
-    description: 'Disaggregated data on secondary school completion for girls with disabilities is not collected systematically at the national level.',
-    affectedDistricts: 30, dataCompleteness: 12, lastReported: '2022-Q4',
-    recommendation: 'Integrate disability-disaggregated indicators into MINEDUC annual school census.'
+    id: 'f6', severity: 'info', domain: 'education',
+    title: "Girls' Secondary Completion Rate by Disability Status",
+    description: 'Disaggregated data on secondary school completion for girls with disabilities is not collected systematically.',
+    affectedDistricts: 30,
+    districtIds: ALL_DISTRICT_IDS,
+    dataCompleteness: 12, lastReported: '2022-Q4',
+    recommendation: 'Integrate disability-disaggregated indicators into MINEDUC annual school census.',
   },
   {
-    id: '7', severity: 'info', domain: 'health',
+    id: 'f7', severity: 'info', domain: 'health',
     title: 'Contraceptive Use Data Frequency Gap',
     description: 'Contraceptive prevalence rate is only measured every 5 years via DHS, insufficient for annual NST1 progress tracking.',
-    affectedDistricts: 30, dataCompleteness: 60, lastReported: '2024-Q2',
-    recommendation: 'Introduce annual contraceptive use module in HMIS facility reporting.'
+    affectedDistricts: 30,
+    districtIds: ALL_DISTRICT_IDS,
+    dataCompleteness: 60, lastReported: '2024-Q2',
+    recommendation: 'Introduce annual contraceptive use module in HMIS facility reporting.',
   },
   {
-    id: '8', severity: 'critical', domain: 'crossCutting',
+    id: 'f8', severity: 'critical', domain: 'crossCutting',
     title: 'GBV Incident Reporting Severely Underreported',
-    description: 'Police and health facility GBV data are not harmonized, with an estimated 60–70% of incidents going unreported due to stigma and access barriers.',
-    affectedDistricts: 30, dataCompleteness: 18, lastReported: '2024-Q1',
-    recommendation: 'Establish a unified GBV data management system linking RNP, RBC, and MIGEPROF.'
+    description: 'Police and health facility GBV data are not harmonized, with an estimated 60–70% of incidents going unreported.',
+    affectedDistricts: 30,
+    districtIds: ALL_DISTRICT_IDS,
+    dataCompleteness: 18, lastReported: '2024-Q1',
+    recommendation: 'Establish a unified GBV data management system linking RNP, RBC, and MIGEPROF.',
   },
 ];
 
-const DOMAIN_COVERAGE = [
-  { domain: 'Economic', coverage: 54, gaps: 3, color: domainColors.economic },
-  { domain: 'Health', coverage: 68, gaps: 2, color: domainColors.health },
-  { domain: 'Education', coverage: 72, gaps: 2, color: domainColors.education },
-  { domain: 'Leadership', coverage: 41, gaps: 1, color: domainColors.leadership },
-  { domain: 'Cross-Cutting', coverage: 29, gaps: 1, color: domainColors.crossCutting },
+const DOMAIN_META: { key: Exclude<Domain,'all'>; label: string }[] = [
+  { key: 'economic',     label: 'Economic'     },
+  { key: 'health',       label: 'Health'       },
+  { key: 'education',    label: 'Education'    },
+  { key: 'leadership',   label: 'Leadership'   },
+  { key: 'crossCutting', label: 'Cross-Cutting'},
+  { key: 'finance',      label: 'Finance'      },
 ];
-
-const RADAR_DATA = DOMAIN_COVERAGE.map(d => ({ subject: d.domain, coverage: d.coverage, fullMark: 100 }));
 
 const severityConfig = {
   critical: { color: '#E53E3E', bg: 'bg-red-50', border: 'border-red-200', label: 'Critical', icon: AlertTriangle },
@@ -108,7 +154,7 @@ function CompletenessBar({ value }: { value: number }) {
   );
 }
 
-function GapCard({ gap, onGenerateBrief }: { gap: GapItem; onGenerateBrief: (gap: GapItem) => void }) {
+function GapCard({ gap, onGenerateBrief, onCtaClick }: { gap: GapItem; onGenerateBrief: (gap: GapItem) => void; onCtaClick: (gap: GapItem, action: CtaActionType) => void }) {
   const [expanded, setExpanded] = useState(false);
   const cfg = severityConfig[gap.severity];
   const Icon = cfg.icon;
@@ -164,12 +210,27 @@ function GapCard({ gap, onGenerateBrief }: { gap: GapItem; onGenerateBrief: (gap
               <p className="text-xs font-semibold text-dark-gray uppercase tracking-wider mb-1">Recommendation</p>
               <p className="text-sm text-rich-black">{gap.recommendation}</p>
             </div>
-            <button
-              onClick={() => onGenerateBrief(gap)}
-              className="btn-accent text-sm px-4 py-2 flex items-center gap-2"
-            >
-              <Sparkles className="w-4 h-4" /> Generate Advocacy Brief
-            </button>
+
+            <div className="flex flex-wrap gap-2 pt-2 border-t border-light-gray">
+              <button
+                onClick={() => onCtaClick(gap, 'submit')}
+                className="btn-accent text-sm px-3 py-1.5 flex items-center gap-2"
+              >
+                📤 Submit Data
+              </button>
+              <button
+                onClick={() => onCtaClick(gap, 'request')}
+                className="btn-ghost text-sm px-3 py-1.5 flex items-center gap-2"
+              >
+                🔄 Request Update
+              </button>
+              <button
+                onClick={() => onGenerateBrief(gap)}
+                className="btn-ghost text-sm px-3 py-1.5 flex items-center gap-2"
+              >
+                <Sparkles className="w-4 h-4" /> Generate Brief
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -253,21 +314,81 @@ export default function GapAnalysis() {
   const [severityFilter, setSeverityFilter] = useState<Severity | 'all'>('all');
   const [domainFilter, setDomainFilter] = useState<Domain>('all');
   const [briefGap, setBriefGap] = useState<GapItem | null>(null);
+  const [activeCtaGap, setActiveCtaGap] = useState<{ gap: GapItem; action: CtaActionType } | null>(null);
+  const { selectedDistricts, allDistricts } = useDistricts();
 
-  const { data: apiAlerts } = useQuery({ queryKey: ['gapAlerts'], queryFn: fetchGapAlerts });
+  const { data: apiAlerts, isLoading: alertsLoading } = useQuery({
+    queryKey: ['gapAlerts'],
+    queryFn: fetchGapAlerts,
+  });
 
-  // Merge API data with static fallback — static data always shown
-  const gaps: GapItem[] = STATIC_GAPS;
+  const { data: catalogStats, isLoading: statsLoading } = useQuery({
+    queryKey: ['catalogStats'],
+    queryFn: fetchCatalogStats,
+  });
 
-  const filtered = gaps.filter(g =>
-    (severityFilter === 'all' || g.severity === severityFilter) &&
-    (domainFilter === 'all' || g.domain === domainFilter)
-  );
+  const isLoading = alertsLoading || statsLoading;
+
+  // Use API alerts when available, fall back to static only if API returns nothing
+  const gaps: GapItem[] = useMemo(() => {
+    if (apiAlerts && apiAlerts.length > 0) {
+      return apiAlerts.map((a, i) => normalizeApiGap(a, i));
+    }
+    return FALLBACK_GAPS;
+  }, [apiAlerts]);
+
+  // Derive domain coverage from real catalog stats, scoped to selected districts
+  const domainCoverage = useMemo(() => {
+    if (catalogStats?.studiesByType && catalogStats.studiesByType.length > 0) {
+      const total = catalogStats.totalStudies || 1;
+      return DOMAIN_META.map(({ key, label }) => {
+        const match = catalogStats.studiesByType.find(
+          s => s.type.toLowerCase().includes(key.toLowerCase()) ||
+               key.toLowerCase().includes(s.type.toLowerCase())
+        );
+        const count = match?.count ?? 0;
+        const coverage = Math.min(100, Math.round((count / total) * 100 * 5)); // scale to 0-100
+        return { domain: label, coverage: coverage || 10, color: domainColors[key] };
+      });
+    }
+    // Derive from gap list: completeness per domain, scoped to selected districts
+    const scopedGaps = selectedDistricts.length > 0
+      ? gaps.filter(g => doesGapAffectSelectedDistricts(g.districtIds, selectedDistricts))
+      : gaps;
+    return DOMAIN_META.map(({ key, label }) => {
+      const domainGaps = scopedGaps.filter(g => g.domain === key);
+      const coverage = domainGaps.length
+        ? Math.round(domainGaps.reduce((s, g) => s + g.dataCompleteness, 0) / domainGaps.length)
+        : 75;
+      return { domain: label, coverage, color: domainColors[key] };
+    });
+  }, [catalogStats, gaps, selectedDistricts]);
+
+  const radarData = domainCoverage.map(d => ({ subject: d.domain, coverage: d.coverage, fullMark: 100 }));
+
+  const filtered = gaps.filter(g => {
+    // Apply severity and domain filters
+    const matchesSeverity = severityFilter === 'all' || g.severity === severityFilter;
+    const matchesDomain = domainFilter === 'all' || g.domain === domainFilter;
+    
+    const matchesDistrict = doesGapAffectSelectedDistricts(g.districtIds, selectedDistricts);
+    
+    return matchesSeverity && matchesDomain && matchesDistrict;
+  });
 
   const criticalCount = gaps.filter(g => g.severity === 'critical').length;
-  const warningCount = gaps.filter(g => g.severity === 'warning').length;
-  const infoCount = gaps.filter(g => g.severity === 'info').length;
-  const avgCompleteness = Math.round(gaps.reduce((s, g) => s + g.dataCompleteness, 0) / gaps.length);
+  const warningCount  = gaps.filter(g => g.severity === 'warning').length;
+  const infoCount     = gaps.filter(g => g.severity === 'info').length;
+  const avgCompleteness = gaps.length
+    ? Math.round(gaps.reduce((s, g) => s + g.dataCompleteness, 0) / gaps.length)
+    : 0;
+
+  if (isLoading) return (
+    <div className="flex items-center justify-center h-64 text-dark-gray gap-3">
+      <Loader2 className="w-5 h-5 animate-spin text-rwanda-blue" />
+      <span className="text-sm">Loading gap analysis data…</span>
+    </div>
+  );
 
   return (
     <div className="p-4 max-w-7xl mx-auto space-y-4">
@@ -307,7 +428,7 @@ export default function GapAnalysis() {
             <BarChart3 className="w-4 h-4 text-rwanda-blue" /> Data Completeness by Domain
           </h3>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={DOMAIN_COVERAGE} layout="vertical" margin={{ top: 0, right: 40, left: 10, bottom: 0 }}>
+            <BarChart data={domainCoverage} layout="vertical" margin={{ top: 0, right: 40, left: 10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#E2E8F0" />
               <XAxis type="number" domain={[0, 100]} hide />
               <YAxis dataKey="domain" type="category" axisLine={false} tickLine={false} tick={{ fill: '#1A1A1A', fontWeight: 500, fontSize: 12 }} width={90} />
@@ -316,7 +437,7 @@ export default function GapAnalysis() {
                 contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
               />
               <Bar dataKey="coverage" radius={[0, 4, 4, 0]} barSize={22} label={{ position: 'right', formatter: (v: number) => `${v}%`, fontSize: 11, fill: '#4A5568' }}>
-                {DOMAIN_COVERAGE.map((d) => <Cell key={d.domain} fill={d.color} />)}
+                {domainCoverage.map((d) => <Cell key={d.domain} fill={d.color} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -327,7 +448,7 @@ export default function GapAnalysis() {
             <Globe className="w-4 h-4 text-rwanda-blue" /> Coverage Radar
           </h3>
           <ResponsiveContainer width="100%" height={200}>
-            <RadarChart data={RADAR_DATA}>
+            <RadarChart data={radarData}>
               <PolarGrid stroke="#E2E8F0" />
               <PolarAngleAxis dataKey="subject" tick={{ fill: '#4A5568', fontSize: 11 }} />
               <Radar name="Coverage" dataKey="coverage" stroke="#00A1DE" fill="#00A1DE" fillOpacity={0.25} strokeWidth={2} />
@@ -366,13 +487,13 @@ export default function GapAnalysis() {
             <div>
               <label className="block text-xs font-semibold text-rich-black uppercase tracking-wider mb-2">Domain</label>
               <div className="space-y-1">
-                {(['all', 'economic', 'health', 'education', 'leadership', 'crossCutting'] as const).map(d => (
+                {(['all', ...DOMAIN_META.map(d => d.key)] as const).map(d => (
                   <button
                     key={d}
-                    onClick={() => setDomainFilter(d)}
+                    onClick={() => setDomainFilter(d as Domain)}
                     className={`w-full text-left px-2 py-1.5 rounded-lg text-xs font-medium transition-colors capitalize ${domainFilter === d ? 'bg-[rgba(0,161,222,0.1)] text-rwanda-blue' : 'text-dark-gray hover:bg-off-white'}`}
                   >
-                    {d === 'all' ? 'All Domains' : d === 'crossCutting' ? 'Cross-Cutting' : d}
+                    {d === 'all' ? 'All Domains' : DOMAIN_META.find(m => m.key === d)?.label ?? d}
                     <span className="float-right text-xs font-bold">
                       {d === 'all' ? gaps.length : gaps.filter(g => g.domain === d).length}
                     </span>
@@ -391,13 +512,22 @@ export default function GapAnalysis() {
         </div>
 
         <div className="flex-1 space-y-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="font-display font-semibold text-rich-black">
               Gaps <span className="text-medium-gray font-normal text-sm">({filtered.length} of {gaps.length})</span>
             </h3>
-            {(severityFilter !== 'all' || domainFilter !== 'all') && (
-              <span className="text-xs text-rwanda-blue bg-[rgba(0,161,222,0.1)] px-2 py-1 rounded-full">Filtered</span>
-            )}
+            <div className="flex items-center gap-2 text-xs">
+              {(severityFilter !== 'all' || domainFilter !== 'all' || selectedDistricts.length > 0) && (
+                <>
+                  <span className="text-rwanda-blue bg-[rgba(0,161,222,0.1)] px-2 py-1 rounded-full">Filtered</span>
+                  {selectedDistricts.length > 0 && (
+                    <span className="text-rwanda-green bg-[rgba(32,96,61,0.1)] px-2 py-1 rounded-full">
+                      {selectedDistricts.length} district{selectedDistricts.length !== 1 ? 's' : ''}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
           </div>
 
           {filtered.length === 0 ? (
@@ -408,13 +538,28 @@ export default function GapAnalysis() {
             </div>
           ) : (
             filtered.map(gap => (
-              <GapCard key={gap.id} gap={gap} onGenerateBrief={setBriefGap} />
+              <GapCard 
+                key={gap.id} 
+                gap={gap} 
+                onGenerateBrief={setBriefGap}
+                onCtaClick={(gap: GapItem, action: CtaActionType) => setActiveCtaGap({ gap, action })}
+              />
             ))
           )}
         </div>
       </div>
 
       {briefGap && <AdvocacyModal gap={briefGap} onClose={() => setBriefGap(null)} />}
+
+      {activeCtaGap && (
+        <GapCtaModal
+          isOpen={!!activeCtaGap}
+          onClose={() => setActiveCtaGap(null)}
+          gapTitle={activeCtaGap.gap.title}
+          gapDescription={activeCtaGap.gap.description}
+          actionType={activeCtaGap.action}
+        />
+      )}
     </div>
   );
 }

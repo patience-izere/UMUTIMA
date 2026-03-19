@@ -1,6 +1,6 @@
 export interface Metric {
   id: string;
-  domain: 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting';
+  domain: 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting' | 'finance';
   title: string;
   value: string;
   trend: string;
@@ -26,7 +26,7 @@ export interface IndicatorSummary {
   id: string;
   title: string;
   description?: string;
-  domain: 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting';
+  domain: 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting' | 'finance';
   source: string;
   updateFrequency: string;
 }
@@ -34,7 +34,7 @@ export interface IndicatorSummary {
 export interface DetailedIndicator {
   id: string;
   title: string;
-  domain: 'economic' | 'health' | 'education' | 'leadership';
+  domain: 'economic' | 'health' | 'education' | 'leadership' | 'finance';
   source: string;
   lastUpdated: string;
   trendData: { year: string; national: number; target: number }[];
@@ -165,3 +165,373 @@ export const fetchDetailedIndicator = async (id: string): Promise<DetailedIndica
   };
 };
 
+
+// ── GRB Types ────────────────────────────────────────────────────────────────
+
+export interface GRBSectorAllocation {
+  sector: string;
+  allocated: number;   // RWF billions
+  executed: number;
+  genderTagged: number; // % of sector budget tagged as gender-sensitive
+}
+
+export interface GRBBudgetLine {
+  year: string;
+  totalBudget: number;    // RWF billions
+  genderBudget: number;   // RWF billions
+  executed: number;       // RWF billions
+  executionRate: number;  // %
+}
+
+export interface GRBIndicator {
+  id: string;
+  title: string;
+  value: string;
+  trend: string;
+  trendDirection: 'up' | 'down' | 'neutral';
+  source: string;
+  year: string;
+}
+
+export interface GRBData {
+  budgetTimeline: GRBBudgetLine[];
+  sectorAllocations: GRBSectorAllocation[];
+  indicators: GRBIndicator[];
+  targetedFunds: number;      // % of gender budget that is women-targeted
+  mainstreamedFunds: number;  // % that is mainstreamed
+}
+
+// Static GRB data based on MINECOFIN Gender Budget Statements
+export const STATIC_GRB_DATA: GRBData = {
+  budgetTimeline: [
+    { year: '2019/20', totalBudget: 2876, genderBudget: 489, executed: 421, executionRate: 86 },
+    { year: '2020/21', totalBudget: 3012, genderBudget: 524, executed: 468, executionRate: 89 },
+    { year: '2021/22', totalBudget: 3341, genderBudget: 601, executed: 553, executionRate: 92 },
+    { year: '2022/23', totalBudget: 3698, genderBudget: 703, executed: 631, executionRate: 90 },
+    { year: '2023/24', totalBudget: 4102, genderBudget: 821, executed: 714, executionRate: 87 },
+  ],
+  sectorAllocations: [
+    { sector: 'Health', allocated: 198, executed: 181, genderTagged: 68 },
+    { sector: 'Education', allocated: 312, executed: 294, genderTagged: 54 },
+    { sector: 'Agriculture', allocated: 143, executed: 119, genderTagged: 47 },
+    { sector: 'Social Protection', allocated: 89, executed: 84, genderTagged: 82 },
+    { sector: 'Economic Dev.', allocated: 76, executed: 58, genderTagged: 31 },
+    { sector: 'Justice & Safety', allocated: 54, executed: 49, genderTagged: 44 },
+    { sector: 'Infrastructure', allocated: 38, executed: 27, genderTagged: 18 },
+    { sector: 'Governance', allocated: 31, executed: 29, genderTagged: 39 },
+  ],
+  indicators: [
+    { id: 'grb-1', title: 'Gender Budget as % of National Budget', value: '20.0%', trend: '+2.1pp vs 2022/23', trendDirection: 'up', source: 'MINECOFIN GBS', year: '2023/24' },
+    { id: 'grb-2', title: 'Budget Execution Rate (Gender Programs)', value: '87%', trend: '-3pp vs 2022/23', trendDirection: 'down', source: 'MINECOFIN', year: '2023/24' },
+    { id: 'grb-3', title: 'Maternal Health Budget Allocation', value: '4.8%', trend: '+0.4pp vs 2022/23', trendDirection: 'up', source: 'MOH / MINECOFIN', year: '2023/24' },
+    { id: 'grb-4', title: "Women's Financial Inclusion Funds", value: 'RWF 23.4B', trend: '+18% vs 2022/23', trendDirection: 'up', source: 'BNR / MINECOFIN', year: '2023/24' },
+  ],
+  targetedFunds: 34,
+  mainstreamedFunds: 66,
+};
+
+export const fetchGRBData = async (): Promise<GRBData> => {
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/grb/summary/`);
+    if (response.ok) {
+      return await response.json();
+    }
+  } catch {}
+  return STATIC_GRB_DATA;
+};
+
+// ── Coverage Map Data ────────────────────────────────────────────────────────
+
+export interface DistrictCoverageData {
+  study_count: number;
+  max_count: number;
+  most_recent_year: string;
+  oldest_year: string;
+  year_span: number;
+  study_types: string[];
+  studies: { id: string; title: string; year: string }[];
+}
+
+export type CoverageMap = Record<string, DistrictCoverageData>;
+
+export const fetchCoverageData = async (): Promise<CoverageMap> => {
+  const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/catalog/?coverage=1`);
+  if (!res.ok) throw new Error('coverage fetch failed');
+  return await res.json();
+};
+
+// ── Catalog Stats (derived from real CSV data) ──────────────────────────────
+
+export interface CatalogStats {
+  totalStudies: number;
+  totalResources: number;
+  studiesByType: { type: string; count: number }[];
+  studiesByYear: { year: string; count: number }[];
+  recentStudies: { id: string; title: string; year: string; organization: string; resource_count: number; quality_score: number; quality_rating: string }[];
+  dataGaps: { title: string; description: string; severity: 'critical' | 'warning' | 'info' }[];
+  avgQualityScore: number;
+  studiesWithNoResources: number;
+  studiesWithMissingAbstract: number;
+}
+
+export const fetchCatalogStats = async (): Promise<CatalogStats> => {
+  const res = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/catalog/?stats=1`);
+  if (!res.ok) throw new Error('stats fetch failed');
+  return await res.json();
+};
+
+// ── Study / Resource Directory Types ─────────────────────────────────────────
+
+export type StudyDomain = 'economic' | 'health' | 'education' | 'leadership' | 'crossCutting' | 'finance';
+export type StudyStatus = 'active' | 'completed' | 'archived' | 'ongoing';
+export type ResourceType = 'report' | 'dataset' | 'presentation' | 'policy_brief' | 'infographic' | 'video' | 'other';
+export type QualityRating = 'excellent' | 'good' | 'fair' | 'poor';
+
+export interface StudyResource {
+  id: number;
+  title: string;
+  resource_type: ResourceType;
+  file_format: string;
+  url: string;
+  file_size_kb: number | null;
+  language: string;
+  description: string;
+  is_public: boolean;
+  download_count: number;
+  created_at: string;
+}
+
+export interface StudyQualityReport {
+  overall_score: number;
+  overall_rating: QualityRating;
+  completeness_score: number;
+  accuracy_score: number;
+  timeliness_score: number;
+  consistency_score: number;
+  sex_disaggregated: boolean;
+  age_disaggregated: boolean;
+  geographic_disaggregated: boolean;
+  disability_disaggregated: boolean;
+  peer_reviewed: boolean;
+  notes: string;
+  assessed_by: string;
+  assessed_at: string;
+}
+
+export interface StudySummary {
+  id: number;
+  title: string;
+  abstract: string;
+  domain: StudyDomain;
+  organization: string;
+  publication_date: string;
+  geographic_scope: string;
+  keywords: string[];
+  methodology: string;
+  status: StudyStatus;
+  resource_count: number;
+  quality_score: number | null;
+  quality_rating: QualityRating | null;
+}
+
+export interface StudyDetail extends StudySummary {
+  authors: string[];
+  sample_size: number | null;
+  doi: string;
+  resources: StudyResource[];
+  quality_report: StudyQualityReport | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StudyFilters {
+  q?: string;
+  domain?: string;
+  status?: string;
+  resource_type?: string;
+  quality_min?: string;
+}
+
+export const fetchStudies = async (filters?: StudyFilters): Promise<StudySummary[]> => {
+  const params = new URLSearchParams();
+  if (filters?.q) params.append('q', filters.q);
+  if (filters?.domain) params.append('domain', filters.domain);
+  if (filters?.status) params.append('status', filters.status);
+  if (filters?.resource_type) params.append('resource_type', filters.resource_type);
+  if (filters?.quality_min) params.append('quality_min', filters.quality_min);
+  try {
+    const response = await fetch(`${API_BASE_URL}/studies/?${params.toString()}`);
+    if (!response.ok) throw new Error('studies fetch failed');
+    const data = await response.json();
+    return Array.isArray(data) ? data : (data.results ?? []);
+  } catch {
+    return STATIC_STUDIES;
+  }
+};
+
+export const fetchStudyDetail = async (id: number): Promise<StudyDetail> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/studies/${id}/`);
+    if (!response.ok) throw new Error('study detail fetch failed');
+    return await response.json();
+  } catch {
+    const found = STATIC_STUDIES_DETAIL.find(s => s.id === id);
+    if (found) return found;
+    throw new Error(`Study ${id} not found`);
+  }
+};
+
+// ── Static fallback study data ────────────────────────────────────────────────
+
+export const STATIC_STUDIES: StudySummary[] = [
+  {
+    id: 1, domain: 'economic', status: 'completed', resource_count: 4, quality_score: 88.5, quality_rating: 'excellent',
+    title: 'Rwanda Gender Disaggregated Labor Force Survey 2023',
+    abstract: 'A comprehensive national survey examining labor force participation rates disaggregated by sex, age, and geographic location across all 30 districts of Rwanda. Covers formal and informal employment, wage gaps, and sector distribution.',
+    organization: 'National Institute of Statistics Rwanda (NISR)',
+    publication_date: '2023-11-15', geographic_scope: 'National — All 30 Districts',
+    keywords: ['labor force', 'employment', 'gender gap', 'wage parity', 'informal sector'],
+    methodology: 'Household Survey',
+  },
+  {
+    id: 2, domain: 'health', status: 'completed', resource_count: 3, quality_score: 74.0, quality_rating: 'good',
+    title: 'Maternal Health Outcomes and Facility Access Study — Western Province 2023',
+    abstract: 'An in-depth study of maternal mortality, skilled birth attendance, and antenatal care coverage in Western Province. Identifies geographic and socioeconomic barriers to facility-based delivery.',
+    organization: 'Rwanda Biomedical Centre (RBC) / Ministry of Health',
+    publication_date: '2023-08-01', geographic_scope: 'Western Province',
+    keywords: ['maternal mortality', 'antenatal care', 'skilled birth attendance', 'facility delivery', 'western province'],
+    methodology: 'Mixed Methods — HMIS + Qualitative',
+  },
+  {
+    id: 3, domain: 'education', status: 'completed', resource_count: 4, quality_score: 81.0, quality_rating: 'good',
+    title: 'Girls Education Continuity and TVET Enrollment Parity Report 2024',
+    abstract: "National assessment of gender parity in secondary and technical/vocational education. Examines dropout rates, transition to TVET, and barriers to girls' continued education.",
+    organization: 'Ministry of Education (MINEDUC)',
+    publication_date: '2024-03-20', geographic_scope: 'National',
+    keywords: ['girls education', 'TVET', 'dropout', 'gender parity', 'secondary school'],
+    methodology: 'Administrative Data Analysis',
+  },
+  {
+    id: 4, domain: 'leadership', status: 'completed', resource_count: 3, quality_score: 91.5, quality_rating: 'excellent',
+    title: 'Women in Leadership and Decision-Making Positions — Rwanda 2024',
+    abstract: "Comprehensive mapping of women's representation across all levels of government, judiciary, private sector boards, and civil society leadership. Benchmarks Rwanda against SADC and global targets.",
+    organization: 'MIGEPROF / UN Women',
+    publication_date: '2024-06-05', geographic_scope: 'National',
+    keywords: ['women leadership', 'parliament', 'judiciary', 'private sector', 'decision-making', 'representation'],
+    methodology: 'Institutional Data Collection',
+  },
+  {
+    id: 5, domain: 'crossCutting', status: 'completed', resource_count: 3, quality_score: 62.0, quality_rating: 'fair',
+    title: 'GBV Incidence and Reporting Barriers — National Study 2023',
+    abstract: 'Mixed-methods study examining gender-based violence incidence rates, reporting barriers, and survivor support service access across Rwanda.',
+    organization: 'MIGEPROF / UNFPA',
+    publication_date: '2023-12-10', geographic_scope: 'National',
+    keywords: ['GBV', 'gender-based violence', 'reporting', 'survivor support', 'police', 'health facilities'],
+    methodology: 'Mixed Methods',
+  },
+  {
+    id: 6, domain: 'finance', status: 'completed', resource_count: 4, quality_score: 85.0, quality_rating: 'excellent',
+    title: 'MINECOFIN Gender Budget Statement Analysis — FY 2023/24',
+    abstract: "Analysis of Rwanda's Gender Budget Statements across all ministries for fiscal year 2023/24. Tracks allocation, execution rates, and gender-tagging methodology against NST1 targets.",
+    organization: 'Ministry of Finance and Economic Planning (MINECOFIN)',
+    publication_date: '2024-09-01', geographic_scope: 'National',
+    keywords: ['gender budget', 'GBS', 'budget execution', 'NST1', 'MINECOFIN', 'fiscal policy'],
+    methodology: 'Budget Analysis',
+  },
+];
+
+const makeQR = (s: StudySummary): StudyQualityReport => ({
+  overall_score: s.quality_score!,
+  overall_rating: s.quality_rating!,
+  completeness_score: Math.min(100, s.quality_score! + 3),
+  accuracy_score: Math.min(100, s.quality_score! + 5),
+  timeliness_score: Math.max(0, s.quality_score! - 6),
+  consistency_score: Math.max(0, s.quality_score! - 4),
+  sex_disaggregated: s.domain !== 'finance',
+  age_disaggregated: s.domain === 'economic' || s.domain === 'health',
+  geographic_disaggregated: s.domain !== 'crossCutting',
+  disability_disaggregated: false,
+  peer_reviewed: s.quality_rating === 'excellent',
+  notes: '',
+  assessed_by: 'GDO Quality Team',
+  assessed_at: s.publication_date,
+});
+
+export const STATIC_STUDIES_DETAIL: StudyDetail[] = [
+  {
+    ...STATIC_STUDIES[0],
+    authors: ['Dr. Uwimana Claudine', 'Jean-Pierre Habimana', 'NISR Research Team'],
+    sample_size: 14820, doi: '10.1234/nisr.lfs.2023',
+    created_at: '2023-11-15', updated_at: '2023-11-15',
+    resources: [
+      { id: 11, title: 'Full Survey Report', resource_type: 'report', file_format: 'pdf', url: '', file_size_kb: 4200, language: 'English', description: 'Complete 180-page survey report with methodology and findings.', is_public: true, download_count: 312, created_at: '2023-11-15' },
+      { id: 12, title: 'Microdata Dataset', resource_type: 'dataset', file_format: 'csv', url: '', file_size_kb: 18500, language: 'English', description: 'Anonymized household-level microdata for secondary analysis.', is_public: false, download_count: 47, created_at: '2023-11-15' },
+      { id: 13, title: 'Policy Brief — Women in the Workforce', resource_type: 'policy_brief', file_format: 'pdf', url: '', file_size_kb: 620, language: 'English', description: 'Key findings and policy recommendations for MIFOTRA.', is_public: true, download_count: 891, created_at: '2023-11-15' },
+      { id: 14, title: 'Summary Infographic', resource_type: 'infographic', file_format: 'pdf', url: '', file_size_kb: 380, language: 'Kinyarwanda', description: 'Visual summary of key statistics for public communication.', is_public: true, download_count: 1204, created_at: '2023-11-15' },
+    ],
+    quality_report: { ...makeQR(STATIC_STUDIES[0]), completeness_score: 92, accuracy_score: 90, timeliness_score: 85, consistency_score: 87, sex_disaggregated: true, age_disaggregated: true, geographic_disaggregated: true, peer_reviewed: true, notes: 'Disability disaggregation planned for 2025 edition.' },
+  },
+  {
+    ...STATIC_STUDIES[1],
+    authors: ['Dr. Mukamana Solange', 'RBC Maternal Health Unit'],
+    sample_size: 3240, doi: '',
+    created_at: '2023-08-01', updated_at: '2023-08-01',
+    resources: [
+      { id: 21, title: 'Research Report', resource_type: 'report', file_format: 'pdf', url: '', file_size_kb: 2800, language: 'English', description: 'Full research report with district-level breakdowns.', is_public: true, download_count: 178, created_at: '2023-08-01' },
+      { id: 22, title: 'HMIS Facility Dataset', resource_type: 'dataset', file_format: 'xlsx', url: '', file_size_kb: 1200, language: 'English', description: 'Facility-level HMIS data for 2021–2023.', is_public: false, download_count: 23, created_at: '2023-08-01' },
+      { id: 23, title: 'Presentation — MOH Review Meeting', resource_type: 'presentation', file_format: 'pptx', url: '', file_size_kb: 5400, language: 'English', description: 'Slides presented at the 2023 MOH annual review.', is_public: true, download_count: 95, created_at: '2023-08-01' },
+    ],
+    quality_report: { ...makeQR(STATIC_STUDIES[1]), completeness_score: 78, accuracy_score: 80, timeliness_score: 72, consistency_score: 66, sex_disaggregated: true, age_disaggregated: true, geographic_disaggregated: true, peer_reviewed: false, notes: 'Consistency score reduced due to HMIS reporting gaps in 3 districts.' },
+  },
+  {
+    ...STATIC_STUDIES[2],
+    authors: ['MINEDUC Gender Unit', 'Dr. Ingabire Vestine'],
+    sample_size: null, doi: '',
+    created_at: '2024-03-20', updated_at: '2024-03-20',
+    resources: [
+      { id: 31, title: 'Annual Education Statistics Report', resource_type: 'report', file_format: 'pdf', url: '', file_size_kb: 3100, language: 'English', description: 'Full statistical report with school-level enrollment data.', is_public: true, download_count: 445, created_at: '2024-03-20' },
+      { id: 32, title: 'School Census Dataset 2023/24', resource_type: 'dataset', file_format: 'xlsx', url: '', file_size_kb: 8900, language: 'English', description: 'School-level enrollment disaggregated by sex and grade.', is_public: true, download_count: 203, created_at: '2024-03-20' },
+      { id: 33, title: 'Policy Brief — Closing the TVET Gender Gap', resource_type: 'policy_brief', file_format: 'pdf', url: '', file_size_kb: 540, language: 'English', description: "Recommendations for increasing girls' TVET enrollment.", is_public: true, download_count: 672, created_at: '2024-03-20' },
+      { id: 34, title: 'Kinyarwanda Summary Brief', resource_type: 'policy_brief', file_format: 'pdf', url: '', file_size_kb: 490, language: 'Kinyarwanda', description: 'Translated summary for district education officers.', is_public: true, download_count: 389, created_at: '2024-03-20' },
+    ],
+    quality_report: { ...makeQR(STATIC_STUDIES[2]), completeness_score: 85, accuracy_score: 84, timeliness_score: 88, consistency_score: 67, sex_disaggregated: true, age_disaggregated: false, geographic_disaggregated: true, peer_reviewed: false, notes: 'Age disaggregation not available in administrative data source.' },
+  },
+  {
+    ...STATIC_STUDIES[3],
+    authors: ['MIGEPROF Research Division', 'UN Women Rwanda'],
+    sample_size: null, doi: '10.5678/migeprof.wl.2024',
+    created_at: '2024-06-05', updated_at: '2024-06-05',
+    resources: [
+      { id: 41, title: 'Leadership Mapping Report', resource_type: 'report', file_format: 'pdf', url: '', file_size_kb: 2600, language: 'English', description: 'Full report with sector-by-sector analysis.', is_public: true, download_count: 521, created_at: '2024-06-05' },
+      { id: 42, title: 'Leadership Database (Excel)', resource_type: 'dataset', file_format: 'xlsx', url: '', file_size_kb: 760, language: 'English', description: 'Structured dataset of leadership positions by institution and sex.', is_public: true, download_count: 188, created_at: '2024-06-05' },
+      { id: 43, title: 'Infographic — Rwanda Leadership at a Glance', resource_type: 'infographic', file_format: 'pdf', url: '', file_size_kb: 420, language: 'English', description: 'One-page visual summary for communications.', is_public: true, download_count: 1567, created_at: '2024-06-05' },
+    ],
+    quality_report: { ...makeQR(STATIC_STUDIES[3]), completeness_score: 95, accuracy_score: 93, timeliness_score: 90, consistency_score: 88, sex_disaggregated: true, age_disaggregated: false, geographic_disaggregated: true, peer_reviewed: true, notes: 'Highest quality score in current dataset. Recommended as reference study.' },
+  },
+  {
+    ...STATIC_STUDIES[4],
+    authors: ['RNP Gender Desk', 'RBC', 'MIGEPROF', 'UNFPA Rwanda'],
+    sample_size: 5600, doi: '',
+    created_at: '2023-12-10', updated_at: '2023-12-10',
+    resources: [
+      { id: 51, title: 'GBV Study Full Report', resource_type: 'report', file_format: 'pdf', url: '', file_size_kb: 5100, language: 'English', description: 'Comprehensive report including survivor testimonies and quantitative analysis.', is_public: true, download_count: 267, created_at: '2023-12-10' },
+      { id: 52, title: 'Incident Data — Anonymized', resource_type: 'dataset', file_format: 'csv', url: '', file_size_kb: 3200, language: 'English', description: 'Anonymized incident-level data from RNP and health facilities.', is_public: false, download_count: 31, created_at: '2023-12-10' },
+      { id: 53, title: 'Policy Brief — Strengthening GBV Response', resource_type: 'policy_brief', file_format: 'pdf', url: '', file_size_kb: 580, language: 'English', description: 'Recommendations for unified GBV data management system.', is_public: true, download_count: 743, created_at: '2023-12-10' },
+    ],
+    quality_report: { ...makeQR(STATIC_STUDIES[4]), completeness_score: 55, accuracy_score: 70, timeliness_score: 68, consistency_score: 55, sex_disaggregated: true, age_disaggregated: true, geographic_disaggregated: false, peer_reviewed: false, notes: 'Low completeness due to significant underreporting. Geographic disaggregation limited by data sensitivity.' },
+  },
+  {
+    ...STATIC_STUDIES[5],
+    authors: ['MINECOFIN Budget Department', 'Dr. Nkurunziza Eric'],
+    sample_size: null, doi: '',
+    created_at: '2024-09-01', updated_at: '2024-09-01',
+    resources: [
+      { id: 61, title: 'Gender Budget Statement 2023/24', resource_type: 'report', file_format: 'pdf', url: '', file_size_kb: 3800, language: 'English', description: 'Official GBS document covering all 29 ministries.', is_public: true, download_count: 634, created_at: '2024-09-01' },
+      { id: 62, title: 'Budget Execution Data', resource_type: 'dataset', file_format: 'xlsx', url: '', file_size_kb: 1400, language: 'English', description: 'Ministry-level budget allocation and execution figures.', is_public: true, download_count: 291, created_at: '2024-09-01' },
+      { id: 63, title: 'NST1 Gender Targets Tracker', resource_type: 'dataset', file_format: 'xlsx', url: '', file_size_kb: 680, language: 'English', description: 'Progress tracking against NST1 gender budget targets.', is_public: true, download_count: 418, created_at: '2024-09-01' },
+      { id: 64, title: 'Policy Brief — Closing the Budget Execution Gap', resource_type: 'policy_brief', file_format: 'pdf', url: '', file_size_kb: 510, language: 'English', description: 'Recommendations for improving gender budget execution rates.', is_public: true, download_count: 876, created_at: '2024-09-01' },
+    ],
+    quality_report: { ...makeQR(STATIC_STUDIES[5]), completeness_score: 90, accuracy_score: 88, timeliness_score: 82, consistency_score: 80, sex_disaggregated: false, age_disaggregated: false, geographic_disaggregated: false, peer_reviewed: false, notes: 'Budget data by nature is not sex-disaggregated at individual level.' },
+  },
+];

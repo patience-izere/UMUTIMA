@@ -1,5 +1,6 @@
 import React from 'react';
 import { Search, Bell, User } from 'lucide-react';
+import DistrictFilter from './DistrictFilter';
 
 export default function Header() {
   return (
@@ -14,8 +15,10 @@ export default function Header() {
           />
         </div>
       </div>
-      
-      <div className="flex items-center gap-4">
+
+      <div className="flex items-center gap-3">
+        <DistrictFilter />
+        
         <button className="relative p-2 hover:bg-white/10 rounded-full transition-colors">
           <Bell className="w-5 h-5" />
           <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-rwanda-gold rounded-full" />

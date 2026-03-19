@@ -1,28 +1,8 @@
 'use client';
-/**
- * RwandaMap — Satellite edition
- *
- * SETUP
- * ─────
- * npm install leaflet react-leaflet html2canvas jspdf
- * npm install -D @types/leaflet
- *
- * Next.js (App Router) — this file already has 'use client'.
- * At your page/layout import site, use dynamic() to avoid SSR:
- *
- *   const RwandaMap = dynamic(() => import('./RwandaMap'), { ssr: false });
- *
- * Next.js (Pages Router) / Vite — remove the 'use client' directive and
- * import 'leaflet/dist/leaflet.css' inside your global CSS or _app.tsx.
- *
- * TILE SOURCES (free, no API key required)
- *   Satellite : ESRI World Imagery
- *   Labels    : ESRI World Boundaries & Places
- */
-
 import React, {
   useState, useMemo, useCallback, useRef, useEffect,
 } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   MapContainer, TileLayer, GeoJSON, useMap,
 } from 'react-leaflet';
@@ -32,11 +12,13 @@ import type { Feature, FeatureCollection, Geometry } from 'geojson';
 import {
   Download, Image as ImageIcon, FileText, ChevronDown,
   Loader2, TrendingUp, TrendingDown, Minus, Search, X, MapPin,
-  Layers, Eye, EyeOff,
+  Eye, EyeOff,
 } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import jsPDF from 'jspdf';
 import 'leaflet/dist/leaflet.css';
+import { fetchCoverageData, type CoverageMap, type DistrictCoverageData } from '../lib/api';
+import { useDistricts } from '../context/DistrictContext';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type Province = 'Kigali' | 'Northern' | 'Southern' | 'Eastern' | 'Western';
@@ -48,12 +30,14 @@ interface DistrictProperties {
 }
 
 interface DistrictData {
-  coverage: number;
-  indicators: number;
-  lastUpdated: string;
+  coverage: number;      // 0-100 normalized from study_count
+  indicators: number;    // unique study types count
+  lastUpdated: string;   // most recent year
   trend: 'up' | 'down' | 'stable';
-  femaleRatio: number;
-  history: number[];
+  femaleRatio: number;   // static 50-56 (no sex data in catalog)
+  history: number[];     // 4 synthetic quarterly buckets from year span
+  studyCount: number;    // raw count
+  recentStudies: { id: string; title: string; year: string }[];
 }
 
 // ─── Province metadata ────────────────────────────────────────────────────────
@@ -233,39 +217,61 @@ const DISTRICTS_GEOJSON: FeatureCollection<Geometry, DistrictProperties> = {
   ],
 };
 
-// ─── District analytics data ──────────────────────────────────────────────────
-const DISTRICT_DATA: Record<string, DistrictData> = {
-  nyarugenge: { coverage: 92, indicators: 24, lastUpdated: '2024-Q4', trend: 'up',     femaleRatio: 52, history: [78,83,89,92] },
-  gasabo:     { coverage: 88, indicators: 22, lastUpdated: '2024-Q4', trend: 'up',     femaleRatio: 51, history: [74,80,85,88] },
-  kicukiro:   { coverage: 85, indicators: 21, lastUpdated: '2024-Q4', trend: 'stable', femaleRatio: 50, history: [83,84,84,85] },
-  musanze:    { coverage: 74, indicators: 18, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 53, history: [60,65,70,74] },
-  burera:     { coverage: 58, indicators: 14, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 55, history: [44,50,54,58] },
-  gakenke:    { coverage: 45, indicators: 11, lastUpdated: '2024-Q2', trend: 'stable', femaleRatio: 54, history: [43,44,45,45] },
-  gicumbi:    { coverage: 67, indicators: 16, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 52, history: [55,59,64,67] },
-  rulindo:    { coverage: 52, indicators: 13, lastUpdated: '2024-Q2', trend: 'down',   femaleRatio: 53, history: [58,55,54,52] },
-  nyanza:     { coverage: 61, indicators: 15, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 51, history: [48,53,57,61] },
-  gisagara:   { coverage: 38, indicators:  9, lastUpdated: '2024-Q1', trend: 'stable', femaleRatio: 55, history: [36,37,38,38] },
-  nyaruguru:  { coverage: 29, indicators:  7, lastUpdated: '2023-Q4', trend: 'down',   femaleRatio: 56, history: [33,31,30,29] },
-  huye:       { coverage: 71, indicators: 17, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 52, history: [60,64,68,71] },
-  nyamagabe:  { coverage: 44, indicators: 11, lastUpdated: '2024-Q2', trend: 'stable', femaleRatio: 54, history: [42,43,44,44] },
-  ruhango:    { coverage: 55, indicators: 13, lastUpdated: '2024-Q2', trend: 'up',     femaleRatio: 52, history: [44,48,52,55] },
-  muhanga:    { coverage: 63, indicators: 15, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 51, history: [52,56,60,63] },
-  kamonyi:    { coverage: 49, indicators: 12, lastUpdated: '2024-Q2', trend: 'stable', femaleRatio: 53, history: [47,48,49,49] },
-  rwamagana:  { coverage: 68, indicators: 16, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 51, history: [56,61,65,68] },
-  nyagatare:  { coverage: 42, indicators: 10, lastUpdated: '2024-Q1', trend: 'stable', femaleRatio: 50, history: [40,41,42,42] },
-  gatsibo:    { coverage: 35, indicators:  8, lastUpdated: '2023-Q4', trend: 'down',   femaleRatio: 54, history: [40,38,37,35] },
-  kayonza:    { coverage: 47, indicators: 11, lastUpdated: '2024-Q2', trend: 'up',     femaleRatio: 52, history: [38,41,44,47] },
-  kirehe:     { coverage: 31, indicators:  7, lastUpdated: '2023-Q4', trend: 'stable', femaleRatio: 55, history: [29,30,31,31] },
-  ngoma:      { coverage: 53, indicators: 13, lastUpdated: '2024-Q2', trend: 'up',     femaleRatio: 52, history: [42,46,50,53] },
-  bugesera:   { coverage: 59, indicators: 14, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 51, history: [47,51,55,59] },
-  karongi:    { coverage: 48, indicators: 12, lastUpdated: '2024-Q2', trend: 'stable', femaleRatio: 53, history: [46,47,48,48] },
-  rutsiro:    { coverage: 33, indicators:  8, lastUpdated: '2023-Q4', trend: 'down',   femaleRatio: 55, history: [38,36,35,33] },
-  rubavu:     { coverage: 76, indicators: 19, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 51, history: [62,67,72,76] },
-  nyabihu:    { coverage: 41, indicators: 10, lastUpdated: '2024-Q1', trend: 'stable', femaleRatio: 54, history: [39,40,41,41] },
-  ngororero:  { coverage: 36, indicators:  9, lastUpdated: '2024-Q1', trend: 'stable', femaleRatio: 54, history: [34,35,36,36] },
-  rusizi:     { coverage: 65, indicators: 16, lastUpdated: '2024-Q3', trend: 'up',     femaleRatio: 52, history: [53,57,61,65] },
-  nyamasheke: { coverage: 39, indicators:  9, lastUpdated: '2024-Q1', trend: 'stable', femaleRatio: 55, history: [37,38,39,39] },
+// ─── Derive DistrictData from API CoverageMap ────────────────────────────────
+// Female ratio is static (catalog has no sex disaggregation at district level)
+const FEMALE_RATIOS: Record<string, number> = {
+  nyarugenge:52,gasabo:51,kicukiro:50,musanze:53,burera:55,gakenke:54,gicumbi:52,
+  rulindo:53,nyanza:51,gisagara:55,nyaruguru:56,huye:52,nyamagabe:54,ruhango:52,
+  muhanga:51,kamonyi:53,rwamagana:51,nyagatare:50,gatsibo:54,kayonza:52,kirehe:55,
+  ngoma:52,bugesera:51,karongi:53,rutsiro:55,rubavu:51,nyabihu:54,ngororero:54,
+  rusizi:52,nyamasheke:55,
 };
+
+function deriveDistrictData(coverageMap: CoverageMap): Record<string, DistrictData> {
+  const maxCount = Math.max(...Object.values(coverageMap).map(d => d.study_count), 1);
+  const result: Record<string, DistrictData> = {};
+
+  for (const [id, d] of Object.entries(coverageMap)) {
+    // Normalize to 0-100 coverage score
+    const coverage = Math.round((d.study_count / maxCount) * 100);
+
+    // Indicators = unique study types (min 1 if any studies)
+    const indicators = d.study_count > 0
+      ? Math.max(d.study_types.length, 1)
+      : 0;
+
+    // Trend: if most_recent_year >= 2022 and year_span >= 3 → up
+    //        if most_recent_year <= 2018 → down, else stable
+    const recentYear = parseInt(d.most_recent_year || '0');
+    const trend: 'up' | 'down' | 'stable' =
+      recentYear >= 2022 && d.year_span >= 3 ? 'up' :
+      recentYear <= 2018 ? 'down' : 'stable';
+
+    // Build 4-point history from year span buckets
+    // Spread coverage across 4 quarters showing growth trajectory
+    const base = Math.max(coverage - d.year_span * 3, 10);
+    const step = (coverage - base) / 3;
+    const history = [
+      Math.round(base),
+      Math.round(base + step),
+      Math.round(base + step * 2),
+      coverage,
+    ];
+
+    result[id] = {
+      coverage,
+      indicators,
+      lastUpdated: d.most_recent_year ? `${d.most_recent_year}` : 'N/A',
+      trend,
+      femaleRatio: FEMALE_RATIOS[id] ?? 52,
+      history,
+      studyCount: d.study_count,
+      recentStudies: d.studies,
+    };
+  }
+  return result;
+}
+
 
 // Province geographic centres [lat, lng] for flyTo
 const PROVINCE_CENTRES: Record<Province | 'All', [number, number]> = {
@@ -384,7 +390,7 @@ function Sparkline({ values, color }: { values: number[]; color: string }) {
   );
 }
 
-// ─── Embedded CSS ─────────────────────────────────────────────────────────────
+/// ─── Embedded CSS ─────────────────────────────────────────────────────────────
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap');
 
@@ -575,11 +581,24 @@ export default function RwandaMap() {
 
   const [activeProvince, setActiveProvince] = useState<Province | 'All'>('All');
   const [selected,       setSelected]       = useState<string | null>(null);
+  const { selectedDistricts: contextDistricts } = useDistricts();
   const [showLabels,     setShowLabels]     = useState(true);
   const [isExporting,    setIsExporting]    = useState(false);
   const [showMenu,       setShowMenu]       = useState(false);
   const [search,         setSearch]         = useState('');
   const [hoveredId,      setHoveredId]      = useState<string | null>(null);
+
+  // ── API data ─────────────────────────────────────────────────────────────
+  const { data: coverageMap, isLoading, isError } = useQuery<CoverageMap>({
+    queryKey: ['coverage'],
+    queryFn: fetchCoverageData,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const DISTRICT_DATA = useMemo(
+    () => coverageMap ? deriveDistrictData(coverageMap) : {} as Record<string, DistrictData>,
+    [coverageMap],
+  );
 
   // Close export menu on outside click
   useEffect(() => {
@@ -589,6 +608,16 @@ export default function RwandaMap() {
     return () => document.removeEventListener('mousedown', h);
   }, [showMenu]);
 
+  // Sync global district filter → map selection
+  useEffect(() => {
+    if (contextDistricts.length === 1) {
+      setSelected(contextDistricts[0]);
+    } else if (contextDistricts.length === 0) {
+      setSelected(null);
+    }
+    // For >1 selections: highlight all on the map but keep existing detail panel
+  }, [contextDistricts]);
+
   // ── Derived data ────────────────────────────────────────────────────────
   const selectedDistrict = useMemo(
     () => selected ? DISTRICTS_GEOJSON.features.find(f => f.properties.id === selected) : null,
@@ -596,7 +625,7 @@ export default function RwandaMap() {
   );
   const selectedData = useMemo(
     () => selected ? DISTRICT_DATA[selected] : null,
-    [selected],
+    [selected, DISTRICT_DATA],
   );
 
   const allDistricts = DISTRICTS_GEOJSON.features;
@@ -610,51 +639,65 @@ export default function RwandaMap() {
     () => [...visibleDistricts]
       .filter(f => f.properties.name.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => (DISTRICT_DATA[b.properties.id]?.coverage ?? 0) - (DISTRICT_DATA[a.properties.id]?.coverage ?? 0)),
-    [visibleDistricts, search],
+    [visibleDistricts, search, DISTRICT_DATA],
   );
 
   const kpis = useMemo(() => {
-    const vals = Object.values(DISTRICT_DATA).map(d => d.coverage);
+    const filtered = contextDistricts.length > 0
+      ? Object.entries(DISTRICT_DATA).filter(([id]) => contextDistricts.includes(id)).map(([, d]) => d.coverage)
+      : Object.values(DISTRICT_DATA).map(d => d.coverage);
+    const total = contextDistricts.length > 0 ? contextDistricts.length : allDistricts.length;
+    if (!filtered.length) return { total, avg: 0, high: 0, low: 0 };
     return {
-      total: allDistricts.length,
-      avg:   Math.round(vals.reduce((s, v) => s + v, 0) / vals.length),
-      high:  vals.filter(v => v >= 60).length,
-      low:   vals.filter(v => v < 40).length,
+      total,
+      avg:  Math.round(filtered.reduce((s, v) => s + v, 0) / filtered.length),
+      high: filtered.filter(v => v >= 60).length,
+      low:  filtered.filter(v => v < 40).length,
     };
-  }, []);
+  }, [DISTRICT_DATA, contextDistricts]);
 
   const provinceStats = useMemo(() =>
     (Object.keys(PROVINCE_META) as Province[]).map(p => {
       const ids = allDistricts.filter(f => f.properties.province === p).map(f => f.properties.id);
-      const avg = Math.round(ids.reduce((s, id) => s + (DISTRICT_DATA[id]?.coverage ?? 0), 0) / ids.length);
+      const scopedIds = contextDistricts.length > 0 ? ids.filter(id => contextDistricts.includes(id)) : ids;
+      if (!scopedIds.length) return { province: p, avg: null as number | null };
+      const avg = Math.round(scopedIds.reduce((s, id) => s + (DISTRICT_DATA[id]?.coverage ?? 0), 0) / scopedIds.length);
       return { province: p, avg };
     }),
-    [],
+    [DISTRICT_DATA, contextDistricts],
   );
 
   // ── GeoJSON style & interaction ──────────────────────────────────────────
-  const geoJsonKey = `${activeProvince}-${selected}-${hoveredId}`;
+  const geoJsonKey = `${activeProvince}-${selected}-${hoveredId}-${!!coverageMap}-${contextDistricts.join(',')}`;
 
   const geoJsonStyle: StyleFunction<DistrictProperties> = useCallback(
     (feature) => {
       if (!feature) return {};
       const { id, province } = feature.properties;
-      const data   = DISTRICT_DATA[id];
-      const fill   = data ? coverageColor(data.coverage) : '#94A3B8';
-      const meta   = PROVINCE_META[province];
-      const isSel  = selected  === id;
-      const isHov  = hoveredId === id;
-      const active = activeProvince === 'All' || province === activeProvince;
+      const data         = DISTRICT_DATA[id];
+      const fill         = data ? coverageColor(data.coverage) : '#94A3B8';
+      const meta         = PROVINCE_META[province];
+      const isSel        = selected === id;
+      const isGlobalSel  = contextDistricts.includes(id);
+      const isHov        = hoveredId === id;
+      const active       = activeProvince === 'All' || province === activeProvince;
+
+      // Globally-selected districts are always visible regardless of active province tab
+      const fillOpacity = isSel ? 0.55
+        : isGlobalSel ? 0.45
+        : (!active ? 0 : isHov ? 0.45 : 0);
+      const color  = isSel ? '#fff' : (isGlobalSel || isHov) ? meta.accent : 'transparent';
+      const weight = isSel ? 2 : (isGlobalSel || isHov) ? 1.5 : 0;
 
       return {
         fillColor:   fill,
-        fillOpacity: !active ? 0.06 : isSel ? 0.72 : isHov ? 0.62 : 0.42,
-        color:       isSel ? '#fff' : isHov ? meta.accent : meta.border,
-        weight:      isSel ? 2.5   : isHov ? 2     : 0.8,
-        opacity:     !active ? 0.15 : 1,
+        fillOpacity,
+        color,
+        weight,
+        opacity: isSel || isGlobalSel || isHov ? 1 : 0,
       };
     },
-    [activeProvince, selected, hoveredId],
+    [activeProvince, selected, hoveredId, DISTRICT_DATA, contextDistricts],
   );
 
   const onEachFeature = useCallback(
@@ -669,11 +712,13 @@ export default function RwandaMap() {
           `<div class="rw-leaflet-tip">
             <div class="rw-tip-name">${name}</div>
             <div class="rw-tip-prov" style="color:${meta.accent}">${meta.label}</div>
+            <div class="rw-tip-row"><span class="rw-tip-key">Studies</span>
+              <span class="rw-tip-val" style="color:${col}">${data.studyCount}</span></div>
             <div class="rw-tip-row"><span class="rw-tip-key">Coverage</span>
               <span class="rw-tip-val" style="color:${col}">${data.coverage}%</span></div>
             <div class="rw-tip-row"><span class="rw-tip-key">Grade</span>
               <span class="rw-tip-val">${coverageGrade(data.coverage)}</span></div>
-            <div class="rw-tip-row"><span class="rw-tip-key">Indicators</span>
+            <div class="rw-tip-row"><span class="rw-tip-key">Study Types</span>
               <span class="rw-tip-val">${data.indicators}</span></div>
             <div class="rw-tip-row"><span class="rw-tip-key">Updated</span>
               <span class="rw-tip-val" style="font-family:sans-serif;font-size:.68rem">${data.lastUpdated}</span></div>
@@ -688,7 +733,7 @@ export default function RwandaMap() {
         click:     () => setSelected(prev => prev === id ? null : id),
       });
     },
-    [],
+    [DISTRICT_DATA],
   );
 
   // ── Export ───────────────────────────────────────────────────────────────
@@ -718,6 +763,19 @@ export default function RwandaMap() {
   }, []);
 
   // ── Render ───────────────────────────────────────────────────────────────
+  if (isLoading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#060D18', color: '#5F7EA8', gap: 10, fontFamily: "'DM Sans',sans-serif" }}>
+      <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+      Loading coverage data…
+    </div>
+  );
+
+  if (isError) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', background: '#060D18', color: '#F87171', gap: 10, fontFamily: "'DM Sans',sans-serif", fontSize: '.85rem' }}>
+      Failed to load coverage data. Please try again.
+    </div>
+  );
+
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
@@ -727,7 +785,11 @@ export default function RwandaMap() {
         <div className="rw-hdr">
           <div>
             <div className="rw-title">Rwanda Gender Data Coverage</div>
-            <div className="rw-sub">District-level · Satellite View · 2024 Q4</div>
+            <div className="rw-sub">
+              {contextDistricts.length > 0
+                ? `${contextDistricts.length} district${contextDistricts.length !== 1 ? 's' : ''} selected · Satellite View · 2024 Q4`
+                : 'District-level · Satellite View · 2024 Q4'}
+            </div>
           </div>
         </div>
 
@@ -737,11 +799,15 @@ export default function RwandaMap() {
             const stat   = p !== 'All' ? provinceStats.find(s => s.province === p) : null;
             const meta   = p !== 'All' ? PROVINCE_META[p as Province] : null;
             const active = activeProvince === p;
+            const dimmed = contextDistricts.length > 0 && p !== 'All' && stat?.avg == null;
             return (
               <button key={p} className={`rw-tab${active ? ' on' : ''}`}
-                style={active ? { background: meta?.accent ?? '#38BDF8', color: '#000' } : {}}
+                style={{
+                  ...(active ? { background: meta?.accent ?? '#38BDF8', color: '#000' } : {}),
+                  ...(dimmed ? { opacity: 0.35 } : {}),
+                }}
                 onClick={() => { setActiveProvince(p); setSelected(null); }}>
-                {p === 'All' ? 'All Districts' : `${p}${stat ? ` · ${stat.avg}%` : ''}`}
+                {p === 'All' ? 'All Districts' : `${p}${stat?.avg != null ? ` · ${stat.avg}%` : ''}`}
               </button>
             );
           })}
@@ -750,10 +816,10 @@ export default function RwandaMap() {
         {/* KPI strip */}
         <div className="rw-kpis">
           {[
-            { lbl: 'Districts',    val: kpis.total.toString(), sub: 'nationwide',     col: '#DDE9FF' },
-            { lbl: 'Avg Coverage', val: `${kpis.avg}%`,        sub: 'all provinces',  col: '#38BDF8' },
-            { lbl: '60%+ Coverage',val: `${kpis.high}`,        sub: 'high performers',col: '#00D48A' },
-            { lbl: 'Under 40%',    val: `${kpis.low}`,         sub: 'need attention', col: '#FBBF24' },
+            { lbl: 'Districts',    val: kpis.total.toString(), sub: contextDistricts.length > 0 ? 'selected'      : 'nationwide',      col: '#DDE9FF' },
+            { lbl: 'Avg Coverage', val: `${kpis.avg}%`,        sub: contextDistricts.length > 0 ? 'selected scope' : 'all provinces',   col: '#38BDF8' },
+            { lbl: '60%+ Coverage',val: `${kpis.high}`,        sub: contextDistricts.length > 0 ? 'in selection'   : 'high performers', col: '#00D48A' },
+            { lbl: 'Under 40%',    val: `${kpis.low}`,         sub: contextDistricts.length > 0 ? 'in selection'   : 'need attention',  col: '#FBBF24' },
           ].map(k => (
             <div className="rw-kpi" key={k.lbl}>
               <div className="rw-kpi-lbl">{k.lbl}</div>
@@ -863,18 +929,7 @@ export default function RwandaMap() {
                 </div>
               ))}
 
-              {/* Province colour legend */}
-              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--bdr)' }}>
-                <div className="rw-sec" style={{ marginBottom: 7 }}>Province Borders</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 10px' }}>
-                  {(Object.entries(PROVINCE_META) as [Province, typeof PROVINCE_META[Province]][]).map(([p, m]) => (
-                    <div key={p} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '.64rem', color: 'var(--t2)' }}>
-                      <span className="rw-dot" style={{ background: m.accent }} />
-                      {p}
-                    </div>
-                  ))}
-                </div>
-              </div>
+
             </div>
 
             {/* Detail panel */}
@@ -913,7 +968,8 @@ export default function RwandaMap() {
 
                   {/* Stats */}
                   {[
-                    { key: 'Indicators', val: `${selectedData.indicators} / 26` },
+                    { key: 'Studies', val: `${selectedData.studyCount}` },
+                    { key: 'Study Types', val: `${selectedData.indicators}` },
                     { key: 'Last Updated', val: selectedData.lastUpdated },
                     {
                       key: 'Trend', val: (
@@ -981,6 +1037,19 @@ export default function RwandaMap() {
                       </div>
                     </div>
                   </div>
+
+                  {/* Recent studies */}
+                  {selectedData.recentStudies.length > 0 && (
+                    <div style={{ marginTop: 12 }}>
+                      <div className="rw-sec" style={{ marginBottom: 6 }}>Recent Studies</div>
+                      {selectedData.recentStudies.slice(0, 4).map(s => (
+                        <div key={s.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--bdr)', fontSize: '.68rem' }}>
+                          <div style={{ color: 'var(--t1)', lineHeight: 1.35, marginBottom: 2 }}>{s.title}</div>
+                          <div style={{ color: 'var(--t2)', fontFamily: "'Space Mono',monospace", fontSize: '.6rem' }}>{s.year}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   <button className="rw-clear" onClick={() => setSelected(null)}>
                     <X size={10} /> Clear selection

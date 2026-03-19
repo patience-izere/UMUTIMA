@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, Search, BarChart2, Map, FileText, Settings } from 'lucide-react';
+import { LayoutDashboard, Search, BarChart2, Map, FileText, Settings, Wallet } from 'lucide-react';
 import type { Page } from '../App';
 
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
 
 const navItems: { page: Page; label: string; icon: React.ReactNode }[] = [
   { page: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
+  { page: 'grb', label: 'GRB Dashboard', icon: <Wallet className="w-5 h-5" /> },
   { page: 'explorer', label: 'Data Explorer', icon: <Search className="w-5 h-5" /> },
   { page: 'gaps', label: 'Gap Analysis', icon: <BarChart2 className="w-5 h-5" /> },
   { page: 'map', label: 'District Map', icon: <Map className="w-5 h-5" /> },

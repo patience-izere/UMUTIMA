@@ -1,12 +1,17 @@
 import React from 'react';
 import { FileText } from 'lucide-react';
+import { useDistricts } from '../context/DistrictContext';
 
 export default function Reports() {
+  const { selectedDistricts } = useDistricts();
+
   return (
     <div className="p-4 max-w-7xl mx-auto space-y-3">
       <div>
         <h1 className="text-lg font-display font-bold text-rich-black">Reports</h1>
-        <p className="text-dark-gray text-sm">Generate and download gender data reports.</p>
+        <p className="text-dark-gray text-sm">
+          {selectedDistricts.length > 0 ? `Reports for ${selectedDistricts.length} district${selectedDistricts.length !== 1 ? 's' : ''} — ` : ''}Generate and download gender data reports.
+        </p>
       </div>
       <div className="bg-white rounded-xl shadow-sm border border-light-gray p-8 flex flex-col items-center justify-center text-center">
         <FileText className="w-8 h-8 text-medium-gray mb-3" />

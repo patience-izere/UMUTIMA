@@ -59,7 +59,7 @@ export default function RegionalChart({ regions, level }: Props) {
             ) : (
               <>
                 <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#4A5568' }} tickFormatter={v => v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : `${(v/1e3).toFixed(0)}K`} />
-                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#1A1A1A' }} width={58} />
+                <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 9, fill: '#1A1A1A' }} width={58} interval={0} />
               </>
             )}
             <Tooltip

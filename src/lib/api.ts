@@ -165,6 +165,159 @@ export const fetchDetailedIndicator = async (id: string): Promise<DetailedIndica
   };
 };
 
+// ── Census API ────────────────────────────────────────────────────────────────
+
+const CENSUS_BASE = `${import.meta.env.VITE_API_URL || 'http://localhost:8000/api'}/census`;
+
+export interface CensusOverview {
+  total_population: number;
+  male_population: number;
+  female_population: number;
+  population_density: number;
+  insurance_coverage_pct: string;
+  primary_net_attendance_pct: string;
+  agricultural_households_pct: string;
+  electricity_access_pct: string;
+  water_access_pct: string;
+  general_fertility_rate: number;
+  dependency_ratio: number | null;
+  census_year: number;
+  history: { year: string; total: string; male: string; female: string }[];
+}
+
+export interface CensusRegion {
+  name: string;
+  province: string | null;
+  total: number;
+  male: number;
+  female: number;
+  density: number;
+  share_pct: string;
+}
+
+export interface CensusRegionalData {
+  level: string;
+  regions: CensusRegion[];
+}
+
+export interface CensusSectorEducation {
+  sector: string;
+  level: string;
+  national: { primary_nar: string; primary_nar_male: string; primary_nar_female: string };
+  primary_attendance: { name: string; province: string; nar_both: string; nar_male: string; nar_female: string; gar_both: string }[];
+  secondary_attendance: { name: string; province: string; nar_both: string; gar_both: string }[];
+}
+
+export interface CensusSectorHealth {
+  sector: string;
+  level: string;
+  national: { coverage_both: string; coverage_male: string; coverage_female: string };
+  insurance: { name: string; province: string; coverage_both: string; coverage_male: string; coverage_female: string; coverage_urban: string; coverage_rural: string }[];
+  fertility: { name: string; province: string; gfr: number; sbr: number }[];
+}
+
+export interface CensusSectorAgriculture {
+  sector: string;
+  level: string;
+  national: { agric_hh_pct: string; total_hh: number };
+  by_region: { name: string; province: string; total_hh: number; agric_hh_count: number; agric_hh_pct: string }[];
+}
+
+export interface CensusSectorHouseholds {
+  sector: string;
+  level: string;
+  national: { total_hh: number; electricity_pct: string; electricity_urban: string; electricity_rural: string };
+  household_counts: { name: string; province: string; total_hh: number }[];
+  electricity: { name: string; province: string; electricity_pct: string; electricity_urban: string; electricity_rural: string }[];
+}
+
+export interface CensusProjection {
+  year: string;
+  medium_total: string;
+  medium_urban: string;
+  medium_rural: string;
+  high_total: string;
+  low_total: string;
+}
+
+export const fetchCensusOverview = async (): Promise<CensusOverview> => {
+  const res = await fetch(`${CENSUS_BASE}/overview/`);
+  if (!res.ok) throw new Error('Census overview fetch failed');
+  return res.json();
+};
+
+export const fetchCensusRegional = async (level: 'province' | 'district' = 'province'): Promise<CensusRegionalData> => {
+  const res = await fetch(`${CENSUS_BASE}/regional/?level=${level}`);
+  if (!res.ok) throw new Error('Census regional fetch failed');
+  return res.json();
+};
+
+export const fetchCensusSector = async (sector: string, level: 'province' | 'district' = 'province'): Promise<any> => {
+  const res = await fetch(`${CENSUS_BASE}/sectors/${sector}/?level=${level}`);
+  if (!res.ok) throw new Error(`Census sector "${sector}" fetch failed`);
+  return res.json();
+};
+
+export const fetchCensusProjections = async (): Promise<{ projections: CensusProjection[] }> => {
+  const res = await fetch(`${CENSUS_BASE}/projections/`);
+  if (!res.ok) throw new Error('Census projections fetch failed');
+  return res.json();
+};
+
+export const fetchCensusDeviations = async (): Promise<CensusDeviationsData> => {
+  const res = await fetch(`${CENSUS_BASE}/deviations/`);
+  if (!res.ok) throw new Error('Census deviations fetch failed');
+  return res.json();
+};
+
+export const fetchCensusVulnerability = async (): Promise<CensusVulnerabilityData> => {
+  const res = await fetch(`${CENSUS_BASE}/vulnerability/`);
+  if (!res.ok) throw new Error('Census vulnerability fetch failed');
+  return res.json();
+};
+
+export const getCensusExportUrl = (sector: string): string =>
+  `${CENSUS_BASE}/export/csv/?sector=${sector}`;
+
+export interface CensusDeviationDistrict {
+  name: string;
+  province: string;
+  primary_nar: number | null;
+  primary_nar_male: number | null;
+  primary_nar_female: number | null;
+  insurance_pct: number | null;
+  electricity_pct: number | null;
+  water_pct: number | null;
+  firewood_pct: number | null;
+  agric_hh_pct: number | null;
+}
+
+export interface CensusDeviationsData {
+  national_averages: {
+    primary_nar: number;
+    insurance_pct: number;
+    electricity_pct: number;
+    water_pct: number;
+    firewood_pct: number;
+    agric_hh_pct: number;
+  };
+  districts: CensusDeviationDistrict[];
+}
+
+export interface CensusVulnerabilityDistrict {
+  name: string;
+  province: string;
+  rank: number;
+  composite_score: number;
+  components: Record<string, number>;
+  indicators: Record<string, number | null>;
+}
+
+export interface CensusVulnerabilityData {
+  districts: CensusVulnerabilityDistrict[];
+  indicator_labels: Record<string, string>;
+}
+
 // ── Coverage Map Data ────────────────────────────────────────────────────────
 
 export interface DistrictCoverageData {

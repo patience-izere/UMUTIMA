@@ -7,10 +7,11 @@ import GapAnalysis from './pages/GapAnalysis';
 import DistrictMap from './pages/DistrictMap';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
+import CensusPage from './pages/CensusPage';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DistrictProvider } from './context/DistrictContext';
 
-export type Page = 'dashboard' | 'explorer' | 'gaps' | 'map' | 'reports' | 'settings';
+export type Page = 'dashboard' | 'explorer' | 'gaps' | 'map' | 'reports' | 'settings' | 'census';
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ export default function App() {
       case 'map': return <DistrictMap />;
       case 'reports': return <Reports />;
       case 'settings': return <Settings />;
+      case 'census': return <CensusPage />;
       default: return <Dashboard />;
     }
   };

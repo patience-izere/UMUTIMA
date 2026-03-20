@@ -110,7 +110,7 @@ export default function CensusPage() {
         <div>
           <h1 className="text-lg font-display font-bold text-rich-black flex items-center gap-2">
             <Users className="w-5 h-5 text-rwanda-blue" />
-            Census Analysis — Rwanda PHC 2022
+            Census Analysis — Rwanda PHC
           </h1>
           <p className="text-dark-gray text-sm">
             Population and Housing Census • Source: NISR •{' '}

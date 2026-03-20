@@ -8,9 +8,9 @@ interface Props {
 }
 
 const navItems: { page: Page; label: string; icon: React.ReactNode }[] = [
-  { page: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
-  { page: 'census', label: 'Census Analysis', icon: <Users className="w-5 h-5" /> },
+  { page: 'census', label: 'Overview', icon: <Users className="w-5 h-5" /> },
   { page: 'explorer', label: 'Data Explorer', icon: <Search className="w-5 h-5" /> },
+  { page: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-5 h-5" /> },
   { page: 'gaps', label: 'Gap Analysis', icon: <BarChart2 className="w-5 h-5" /> },
   { page: 'map', label: 'District Map', icon: <Map className="w-5 h-5" /> },
   { page: 'reports', label: 'Reports', icon: <FileText className="w-5 h-5" /> },

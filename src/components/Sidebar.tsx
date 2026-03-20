@@ -136,7 +136,7 @@ export default function Sidebar({ activePage, onNavigate, mobileOpen, onMobileCl
                 <div className="w-8 h-8 rounded-full bg-rwanda-blue flex items-center justify-center shrink-0">
                   <div className="w-4 h-4 bg-rwanda-yellow rounded-full" />
                 </div>
-                <span className="font-display font-bold text-lg text-rich-black truncate">GDO PORTAL</span>
+                <span className="font-display font-bold text-lg text-rich-black truncate">DD Rw PORTAL</span>
               </div>
             </>
           )}
@@ -179,7 +179,7 @@ export default function Sidebar({ activePage, onNavigate, mobileOpen, onMobileCl
             <div className="w-8 h-8 rounded-full bg-rwanda-blue flex items-center justify-center shrink-0">
               <div className="w-4 h-4 bg-rwanda-yellow rounded-full" />
             </div>
-            <span className="font-display font-bold text-lg text-rich-black">GDO PORTAL</span>
+            <span className="font-display font-bold text-lg text-rich-black">DD Rw PORTAL</span>
           </div>
           <button
             onClick={onMobileClose}

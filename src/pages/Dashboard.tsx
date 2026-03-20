@@ -426,7 +426,7 @@ export default function Dashboard() {
         isOpen={isPdfModalOpen}
         onClose={() => setIsPdfModalOpen(false)}
         onExport={handleExportPDF}
-        defaultTitle="GDO Portal — Data Observatory"
+        defaultTitle="DD Rw PORTAL — Data Observatory"
         sections={[
           { id: 'dashboard-metrics',  label: 'Catalog Overview' },
           { id: 'dashboard-chart',    label: 'Study Charts' },

@@ -101,7 +101,7 @@ function EducationPanel({ data, level }: { data: any; level: string }) {
       {/* Primary NAR by gender */}
       <div className="bg-white rounded-xl border border-light-gray p-4">
         <h4 className="text-xs font-semibold text-rich-black mb-3 uppercase tracking-wider">
-          Primary School Net Attendance Rate — by {isProvince ? 'Province' : 'District'}
+          Primary School Net Attendance Rate(NAR) — by {isProvince ? 'Province' : 'District'}
         </h4>
         <ResponsiveContainer width="100%" height={isProvince ? 210 : Math.max(300, primary.length * 18)}>
           <BarChart data={primary} layout={isProvince ? 'horizontal' : 'vertical'}

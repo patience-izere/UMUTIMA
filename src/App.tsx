@@ -7,11 +7,10 @@ import GapAnalysis from './pages/GapAnalysis';
 import DistrictMap from './pages/DistrictMap';
 import Reports from './pages/Reports';
 import Settings from './pages/Settings';
-import GRBDashboard from './pages/GRBDashboard';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { DistrictProvider } from './context/DistrictContext';
 
-export type Page = 'dashboard' | 'explorer' | 'gaps' | 'map' | 'reports' | 'settings' | 'grb';
+export type Page = 'dashboard' | 'explorer' | 'gaps' | 'map' | 'reports' | 'settings';
 
 const queryClient = new QueryClient();
 
@@ -20,7 +19,6 @@ export default function App() {
 
   const renderPage = () => {
     switch (page) {
-      case 'grb': return <GRBDashboard />;
       case 'explorer': return <DataExplorerPage />;
       case 'gaps': return <GapAnalysis />;
       case 'map': return <DistrictMap />;

@@ -85,7 +85,7 @@ export default function Dashboard() {
     {
       label: 'Total Studies',
       value: stats.totalStudies.toString(),
-      sub: 'NISR microdata catalog',
+      sub: 'Rwanda microdata catalog',
       icon: <BookOpen className="w-4 h-4" />,
       color: '#00A1DE',
       trend: `${stats.studiesByYear.at(-1)?.count ?? 0} in ${stats.studiesByYear.at(-1)?.year ?? '—'}`,
@@ -239,7 +239,9 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <section id="dashboard-map" className="lg:col-span-2">
             <h2 className="text-sm font-display font-semibold text-rich-black mb-2">Coverage Map</h2>
-            <RwandaMap />
+            <div className="h-[500px] rounded-xl overflow-hidden">
+              <RwandaMap />
+            </div>
           </section>
 
           <section id="dashboard-gaps" className="space-y-2">

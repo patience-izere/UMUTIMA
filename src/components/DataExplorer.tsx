@@ -298,7 +298,7 @@ export default function DataExplorer() {
             )}
           </h3>
           <span className="text-xs text-dark-gray flex items-center gap-1">
-            <Filter className="w-3 h-3" /> NISR Microdata Catalog
+            <Filter className="w-3 h-3" /> Rwanda Microdata Catalog
           </span>
         </div>
 
